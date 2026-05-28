@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { Send, MessageSquare, Volume2, RefreshCcw, Radio, Zap, Users, CheckCheck } from "lucide-react";
-import { useAudio } from "@/context/AudioContext";
+import { Send, Volume2, RefreshCcw, Radio, Zap, Users, CheckCheck, Play, Square } from "lucide-react";
 import { sendChatMessage, getChatMessages } from "@/app/actions/chatActions";
 
 const supabase = createClient(
@@ -12,9 +11,8 @@ const supabase = createClient(
 );
 
 export default function RadioInteractionHub() {
-  const { isPlaying } = useAudio();
   const [currentPlaylist, setCurrentPlaylist] = useState<string>("");
-  const [isSyncing, setIsSyncing] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [username, setUsername] = useState("");
@@ -22,18 +20,7 @@ export default function RadioInteractionHub() {
   const [isMuted, setIsMuted] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  // Fungsi Sinkronisasi Jadwal
-  const syncWithAzura = useCallback(async () => {
-    try {
-      setIsSyncing(true);
-      const res = await fetch("/api/nowplaying", { cache: "no-store" });
-      const data = await res.json();
-      const apiData = Array.isArray(data) ? data[0] : data;
-      setCurrentPlaylist(apiData?.now_playing?.playlist || "");
-    } catch (e) { console.error(e); } finally { setIsSyncing(false); }
-  }, []);
+  const audioContextRef = useRef<HTMLAudioElement | null>(null);
 
   const scheduleData = [
     { time: "06:00", title: "Nasyid Pagi", icon: "☀️" },
@@ -47,9 +34,70 @@ export default function RadioInteractionHub() {
     { time: "22:00", title: "Nasyid Lawas", icon: "🎵" },
   ];
 
-  // Load Pesan & Realtime
+  // ✅ FUNGSI SINKRONISASI VIRTUAL STREAM LIVE
+  const syncVirtualRadio = useCallback(async (shouldPlay = false) => {
+    try {
+      const res = await fetch("/api/get-current-radio", { cache: "no-store" });
+      const data = await res.json();
+
+      if (data && data.active) {
+        setCurrentPlaylist(data.title);
+
+        if (shouldPlay) {
+          if (audioContextRef.current) {
+            audioContextRef.current.pause();
+          }
+          
+          // Inisialisasi audio baru dari Supabase Storage sesuai perintah API
+          const audio = new Audio(data.audio_url);
+          // 🚀 LOMPAT SEREMPAK KE DETIK YANG SAMA DENGAN PENDENGAR LAIN!
+          audio.currentTime = data.elapsed_seconds; 
+          audio.muted = isMuted;
+          
+          audioContextRef.current = audio;
+          audio.play()
+            .then(() => setIsPlaying(true))
+            .catch(() => {
+              setIsPlaying(false);
+              alert("Gagal memutar siaran aktif.");
+            });
+        }
+      } else {
+        setCurrentPlaylist("");
+        if (shouldPlay) {
+          alert("Saat ini sedang tidak ada siaran terjadwal yang aktif, Ris.");
+        }
+      }
+    } catch (e) {
+      console.error("Gagal sinkronisasi radio:", e);
+    }
+  }, [isMuted]);
+
+  // Handle Klik Tombol Dengarkan / Stop
+  const handlePlayPause = () => {
+    if (isPlaying) {
+      if (audioContextRef.current) {
+        audioContextRef.current.pause();
+        audioContextRef.current = null;
+      }
+      setIsPlaying(false);
+    } else {
+      // Saat di-play, cari tahu lagu apa yang sedang mengudara di cloud saat ini
+      syncVirtualRadio(true);
+    }
+  };
+
+  // Sync volume & mute state
   useEffect(() => {
-    syncWithAzura();
+    if (audioContextRef.current) {
+      audioContextRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  // Load Pesan & Realtime Chat
+  useEffect(() => {
+    syncVirtualRadio(false); // Cek judul program aktif pas pertama masuk web
+
     const load = async () => {
       const data = await getChatMessages();
       setMessages(data || []);
@@ -59,16 +107,22 @@ export default function RadioInteractionHub() {
     const channel = supabase.channel("live_chat_radio")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (p) => {
         setMessages((prev) => {
-          // Cegah duplikat jika optimistic update sudah masuk
           if (prev.find(m => m.id === p.new.id)) return prev;
           return [...prev, p.new];
         });
-        if (audioRef.current && !isMuted) audioRef.current.play().catch(() => {});
       }).subscribe();
 
-    const interval = setInterval(syncWithAzura, 30000);
-    return () => { supabase.removeChannel(channel); clearInterval(interval); };
-  }, [isMuted, syncWithAzura]);
+    // Sinkronisasi judul playlist setiap 30 detik agar jika ada pergantian acara otomatis berubah
+    const interval = setInterval(() => syncVirtualRadio(false), 30000);
+    
+    return () => { 
+      supabase.removeChannel(channel); 
+      clearInterval(interval);
+      if (audioContextRef.current) {
+        audioContextRef.current.pause();
+      }
+    };
+  }, [syncVirtualRadio]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -80,7 +134,6 @@ export default function RadioInteractionHub() {
     e.preventDefault();
     if (!newMessage.trim() || !username.trim() || isSending) return;
 
-    // ✅ OPTIMISTIC UPDATE: Biar langsung muncul dengan nama "ADI"
     const tempMsg = {
       id: Math.random().toString(),
       username: username,
@@ -102,8 +155,30 @@ export default function RadioInteractionHub() {
 
   return (
     <section className="max-w-7xl mx-auto my-12 px-6">
-      <audio ref={audioRef} src="/notify.mp3" preload="auto" />
       
+      {/* 📻 TOMBOL UTAMA PLAYER (Ditaruh di atas komponen hub agar mencolok) */}
+      <div className="max-w-md mx-auto mb-8 bg-slate-900 border border-white/5 p-4 rounded-[4px] flex items-center justify-between shadow-xl">
+        <div className="flex items-center gap-3 text-left">
+          <div className={`p-3 rounded-[4px] ${isPlaying ? 'bg-emerald-500 text-slate-900 animate-pulse' : 'bg-white/5 text-emerald-400'}`}>
+            <Radio size={20} />
+          </div>
+          <div>
+            <p className="text-[9px] font-black tracking-widest text-emerald-400 uppercase">
+              {isPlaying ? "• SEDANG MENGUDARA" : "RADIO OFFLINE / PAUSED"}
+            </p>
+            <h3 className="text-xs font-bold text-white uppercase italic">Radio Suara Al Muttaqin</h3>
+          </div>
+        </div>
+        <button
+          onClick={handlePlayPause}
+          className={`px-4 py-2.5 rounded-[4px] text-[10px] font-black tracking-wider flex items-center gap-2 transition-all ${
+            isPlaying ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-emerald-400 text-slate-950 hover:bg-emerald-300'
+          }`}
+        >
+          {isPlaying ? <><Square size={12} fill="currentColor" /> STOP</> : <><Play size={12} fill="currentColor" /> DENGARKAN</>}
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch h-auto lg:h-[700px]">
         
         {/* JADWAL SIARAN (Panel Kiri) */}
@@ -116,7 +191,7 @@ export default function RadioInteractionHub() {
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {scheduleData.map((prog, index) => {
-              const isLive = currentPlaylist.toLowerCase().includes(prog.title.toLowerCase());
+              const isLive = currentPlaylist.toLowerCase() === prog.title.toLowerCase();
               return (
                 <div key={index} className={`flex items-center justify-between p-4 border transition-all rounded-[4px] ${
                   isLive ? "bg-emerald-600 border-emerald-400 shadow-lg scale-[1.02]" : "bg-white/5 border-white/5"
@@ -135,10 +210,8 @@ export default function RadioInteractionHub() {
           </div>
         </div>
 
-        {/* LIVE CHAT (WhatsApp Pro Style) */}
+        {/* LIVE CHAT (Panel Kanan) */}
         <div className="lg:col-span-8 bg-[#efeae2] rounded-[4px] shadow-2xl flex flex-col overflow-hidden border border-slate-300 relative">
-          
-          {/* Header Chat */}
           <div className="p-3 bg-[#075e54] flex items-center justify-between shadow-md z-10">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-emerald-800 rounded-full flex items-center justify-center border border-white/10">
@@ -154,14 +227,12 @@ export default function RadioInteractionHub() {
             </button>
           </div>
 
-          {/* Chat Messages */}
           <div 
             ref={scrollRef} 
             className="flex-1 overflow-y-auto p-4 md:p-8 space-y-3 custom-scrollbar text-left relative"
             style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundSize: "400px", backgroundBlendMode: 'overlay' }}
           >
             {messages.map((msg, i) => {
-              // ✅ LOGIKA PENYELAMAT: Cek semua kemungkinan nama kolom
               const sender = msg.username || msg.user_name || msg.name || "Hamba Allah";
               const text = msg.message || msg.content || msg.text || "";
               const isMe = sender.toLowerCase() === username.toLowerCase() && username !== "";
@@ -169,26 +240,14 @@ export default function RadioInteractionHub() {
               return (
                 <div key={msg.id || i} className={`flex w-full ${isMe ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1`}>
                   <div className={`relative max-w-[85%] px-3 py-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] transition-all ${
-                    isMe 
-                    ? "bg-[#dcf8c6] rounded-l-lg rounded-br-lg rounded-tr-none" 
-                    : "bg-white rounded-r-lg rounded-bl-lg rounded-tl-none"
+                    isMe ? "bg-[#dcf8c6] rounded-l-lg rounded-br-lg rounded-tr-none" : "bg-white rounded-r-lg rounded-bl-lg rounded-tl-none"
                   }`}>
-                    
-                    {/* Ekor Bubble (Tail) */}
                     <div className={`absolute top-0 w-0 h-0 border-t-[8px] border-t-transparent ${
                       isMe ? "left-full border-l-[8px] border-l-[#dcf8c6]" : "right-full border-r-[8px] border-r-white"
                     }`} />
-
-                    {!isMe && (
-                      <p className="text-[11px] font-black text-emerald-800 mb-0.5 tracking-tight">
-                        {sender}
-                      </p>
-                    )}
-
+                    {!isMe && <p className="text-[11px] font-black text-emerald-800 mb-0.5 tracking-tight">{sender}</p>}
                     <div className="flex items-end gap-3 justify-between">
-                      <p className="text-[14px] text-[#111b21] leading-relaxed break-words min-w-[50px]">
-                        {text}
-                      </p>
+                      <p className="text-[14px] text-[#111b21] leading-relaxed break-words min-w-[50px]">{text}</p>
                       <div className="flex items-center gap-1 shrink-0 pb-0.5">
                         <span className="text-[9px] text-[#667781] font-medium uppercase">
                           {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--"}
@@ -202,7 +261,6 @@ export default function RadioInteractionHub() {
             })}
           </div>
 
-          {/* Input Area */}
           <form onSubmit={handleSendChat} className="p-3 bg-[#f0f2f5] border-t border-slate-200">
             <div className="flex gap-2 items-center">
               <input
