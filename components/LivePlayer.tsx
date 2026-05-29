@@ -1,64 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { useAudio } from "@/context/AudioContext";
 
 export default function LivePlayer() {
   const { isPlaying, togglePlay } = useAudio();
-  const audioContextRef = useRef<HTMLAudioElement | null>(null);
-  const [currentUrl, setCurrentUrl] = useState<string>("");
-
-  // ✅ HANDLER UTAMA: Sinkronisasi Detik secara Serempak ke Supabase Storage
-  const handleLivePlay = async () => {
-    // Jika audio sedang berputar, kita hentikan total koneksinya (Putus stream agar hemat kuota)
-    if (isPlaying) {
-      if (audioContextRef.current) {
-        audioContextRef.current.pause();
-        audioContextRef.current = null;
-      }
-      togglePlay(); // Set state global isPlaying menjadi false
-      return;
-    }
-
-    try {
-      // Ambil data track ter-update yang dijadwalkan oleh Cron-Job
-      const res = await fetch("/api/get-current-radio", { cache: "no-store" });
-      const data = await res.json();
-
-      if (data && data.active) {
-        setCurrentUrl(data.audio_url);
-
-        const audio = new Audio(data.audio_url);
-        // 🚀 LOMPAT SEREMPAK KE DETIK YANG SAMA DENGAN PENDENGAR LAIN!
-        audio.currentTime = data.elapsed_seconds;
-        
-        audioContextRef.current = audio;
-        audio.play()
-          .then(() => {
-            togglePlay(); // Set state global isPlaying menjadi true
-          })
-          .catch((err) => {
-            console.error("Gagal memutar audio virtual live:", err);
-            alert("Gagal memutar siaran aktif.");
-          });
-      } else {
-        alert("Saat ini sedang tidak ada siaran terjadwal yang aktif di cloud, Ris.");
-      }
-    } catch (e) {
-      console.error("Gagal memanggil data siaran:", e);
-      alert("Koneksi database/API sedang Stun!");
-    }
-  };
-
-  // Efek Pembersihan otomatis ketika komponen unmount
-  useEffect(() => {
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.pause();
-        audioContextRef.current = null;
-      }
-    };
-  }, []);
 
   return (
     /**
@@ -92,7 +37,7 @@ export default function LivePlayer() {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            handleLivePlay(); // Hubungkan ke mesin sinkron virtual live
+            togglePlay(); // Mengontrol sakelar audio tunggal global yang sama
           }}
           className={`
             relative z-[10000] flex items-center gap-4 px-10 py-3.5 

@@ -12,7 +12,6 @@ const supabase = createClient(
 
 export default function RadioInteractionHub() {
   const [currentPlaylist, setCurrentPlaylist] = useState<string>("");
-  const [isPlaying, setIsPlaying] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [username, setUsername] = useState("");
@@ -20,7 +19,6 @@ export default function RadioInteractionHub() {
   const [isMuted, setIsMuted] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioContextRef = useRef<HTMLAudioElement | null>(null);
 
   const scheduleData = [
     { time: "06:00", title: "Nasyid Pagi", icon: "☀️" },
@@ -34,66 +32,22 @@ export default function RadioInteractionHub() {
     { time: "22:00", title: "Nasyid Lawas", icon: "🎵" },
   ];
 
-  // ✅ SINKRONISASI VIRTUAL STREAM LIVE
-  const syncVirtualRadio = useCallback(async (shouldPlay = false) => {
+  const syncVirtualRadioName = useCallback(async () => {
     try {
       const res = await fetch("/api/get-current-radio", { cache: "no-store" });
       const data = await res.json();
-
       if (data && data.active) {
         setCurrentPlaylist(data.title);
-
-        if (shouldPlay) {
-          if (audioContextRef.current) {
-            audioContextRef.current.pause();
-          }
-          
-          const audio = new Audio(data.audio_url);
-          audio.currentTime = data.elapsed_seconds; // Lompat serempak!
-          audio.muted = isMuted;
-          
-          audioContextRef.current = audio;
-          audio.play()
-            .then(() => setIsPlaying(true))
-            .catch(() => {
-              setIsPlaying(false);
-              alert("Gagal memutar siaran aktif.");
-            });
-        }
       } else {
         setCurrentPlaylist("");
-        if (shouldPlay) {
-          alert("Saat ini sedang tidak ada siaran terjadwal yang aktif, Ris.");
-        }
       }
     } catch (e) {
-      console.error("Gagal sinkronisasi radio:", e);
+      console.error(e);
     }
-  }, [isMuted]);
-
-  // Handle Klik Tombol Player Besar (PUTAR RADIO)
-  const handlePlayPause = () => {
-    if (isPlaying) {
-      if (audioContextRef.current) {
-        audioContextRef.current.pause();
-        audioContextRef.current = null;
-      }
-      setIsPlaying(false);
-    } else {
-      syncVirtualRadio(true);
-    }
-  };
+  }, []);
 
   useEffect(() => {
-    if (audioContextRef.current) {
-      audioContextRef.current.muted = isMuted;
-    }
-  }, [isMuted]);
-
-  // Load Pesan & Realtime Chat
-  useEffect(() => {
-    syncVirtualRadio(false);
-
+    syncVirtualRadioName();
     const load = async () => {
       const data = await getChatMessages();
       setMessages(data || []);
@@ -108,16 +62,12 @@ export default function RadioInteractionHub() {
         });
       }).subscribe();
 
-    const interval = setInterval(() => syncVirtualRadio(false), 30000);
-    
+    const interval = setInterval(syncVirtualRadioName, 30000);
     return () => { 
       supabase.removeChannel(channel); 
       clearInterval(interval);
-      if (audioContextRef.current) {
-        audioContextRef.current.pause();
-      }
     };
-  }, [syncVirtualRadio]);
+  }, [syncVirtualRadioName]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -149,46 +99,7 @@ export default function RadioInteractionHub() {
   };
 
   return (
-    <section className="max-w-7xl mx-auto my-12 px-6">
-      
-      {/* 🟢 TAMPILAN UTAMA: PLAYER BESAR ASLI ANTUM (Sudah terhubung ke backend baru) */}
-      <div className="w-full bg-[#031d16] border border-emerald-500/10 p-6 md:p-8 rounded-[24px] shadow-2xl mb-8 relative overflow-hidden text-left">
-        <div className="absolute -right-10 -top-10 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl"></div>
-        
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="flex items-center gap-5">
-            <div className="w-20 h-20 bg-slate-900 rounded-[12px] overflow-hidden border border-white/5 flex items-center justify-center shadow-inner shrink-0">
-              <img src="https://images.unsplash.com/photo-1590602847861-f357a9332bbc?q=80&w=200" alt="Studio" className="w-full h-full object-cover opacity-60" />
-            </div>
-            <div>
-              <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-tight italic leading-tight">
-                {currentPlaylist ? `SEDANG MEMUTAR: ${currentPlaylist}` : "SIARAN SEDANG OFFLINE"}
-              </h2>
-              <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-emerald-400 mt-1">
-                Radio Suara Al Muttaqin
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={handlePlayPause}
-            className={`w-full md:w-auto min-w-[180px] py-4 px-8 rounded-[12px] text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-xl ${
-              isPlaying 
-                ? "bg-red-500 text-white hover:bg-red-600" 
-                : "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-            }`}
-          >
-            {isPlaying ? "HENTIKAN RADIO" : "PUTAR RADIO"}
-          </button>
-        </div>
-
-        <div className="mt-6 pt-6 border-t border-white/5 flex items-center gap-6 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-          <div className="flex items-center gap-2 text-emerald-400">
-            <Users size={14} /> <span>0 Pendengar</span>
-          </div>
-        </div>
-      </div>
-
+    <section className="max-w-7xl mx-auto my-6 px-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch h-auto lg:h-[700px]">
         
         {/* JADWAL SIARAN (Panel Kiri) */}
@@ -232,9 +143,6 @@ export default function RadioInteractionHub() {
                 <p className="text-[10px] text-emerald-300 mt-1">Online Sekarang</p>
               </div>
             </div>
-            <button onClick={() => setIsMuted(!isMuted)} className="text-emerald-200/50 hover:text-white transition-colors">
-              <Volume2 size={20} className={isMuted ? "opacity-30" : "opacity-100"} />
-            </button>
           </div>
 
           <div 
@@ -248,7 +156,7 @@ export default function RadioInteractionHub() {
               const isMe = sender.toLowerCase() === username.toLowerCase() && username !== "";
 
               return (
-                <div key={msg.id || i} className={`flex w-full ${isMe ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1`}>
+                <div key={msg.id || i} className={`flex w-full ${isMe ? "justify-end" : "justify-start"}`}>
                   <div className={`relative max-w-[85%] px-3 py-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] transition-all ${
                     isMe ? "bg-[#dcf8c6] rounded-l-lg rounded-br-lg rounded-tr-none" : "bg-white rounded-r-lg rounded-bl-lg rounded-tl-none"
                   }`}>

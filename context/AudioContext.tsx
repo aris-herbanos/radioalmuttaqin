@@ -1,4 +1,5 @@
 "use client";
+
 import React, {
   createContext,
   useContext,
@@ -10,7 +11,9 @@ import React, {
 
 interface AudioContextType {
   isPlaying: boolean;
-  hasError: boolean; // State baru untuk deteksi server offline
+  hasError: boolean;
+  metadata: { title: string; artist: string; art: string };
+  listeners: number;
   togglePlay: () => void;
   analyserRef: React.MutableRefObject<AnalyserNode | null>;
 }
@@ -18,19 +21,64 @@ interface AudioContextType {
 const AudioContext = createContext<AudioContextType | null>(null);
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
-  const streamUrl = "https://rsm.my.id/radio/8010/radio.mp3";
-
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const isInitialized = useRef(false); // ✅ Kunci agar tidak double-init
+  const isInitialized = useRef(false); // Kunci emas agar tidak double-init audio context
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [listeners, setListeners] = useState(0);
+  const [metadata, setMetadata] = useState({
+    title: "Mencari Sinyal...",
+    artist: "Radio Suara Al Muttaqin",
+    art: "/bg-player.png",
+  });
 
   // ===============================
-  // INIT AUDIO ENGINE
+  // 📻 FETCH METADATA UPDATE JADWAL DARI DATABASE
+  // ===============================
+  const fetchMetadata = useCallback(async () => {
+    try {
+      const res = await fetch("/api/get-current-radio", { cache: "no-store" });
+      if (!res.ok) throw new Error("Offline");
+      const data = await res.json();
+      
+      if (data && data.active) {
+        setMetadata({
+          title: data.title || "Siaran Sedang Aktif",
+          artist: "Radio Suara Al Muttaqin",
+          art: "/bg-player.png",
+        });
+        setListeners(1); // Penanda ada trek aktif
+      } else {
+        setMetadata({
+          title: "Siaran Sedang Offline",
+          artist: "Radio Suara Al Muttaqin",
+          art: "/bg-player.png",
+        });
+        setListeners(0);
+      }
+    } catch (err) {
+      setMetadata({
+        title: "Siaran Sedang Offline",
+        artist: "Radio Suara Al Muttaqin",
+        art: "/bg-player.png",
+      });
+      setListeners(0);
+    }
+  }, []);
+
+  // Sinkronisasi metadata periodik setiap 15 detik
+  useEffect(() => {
+    fetchMetadata();
+    const interval = setInterval(fetchMetadata, 15000);
+    return () => clearInterval(interval);
+  }, [fetchMetadata]);
+
+  // ===============================
+  // 🎛️ INIT AUDIO ENGINE (WEB AUDIO API FOR CANVAS)
   // ===============================
   const initAudio = useCallback(() => {
     if (isInitialized.current || !audioRef.current) return;
@@ -41,24 +89,24 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audioContextRef.current = audioCtx;
 
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256; // Lebih kecil lebih ringan untuk visualizer petir antum
+      analyser.fftSize = 256; // Ringan dan responsif untuk efek visualizer petir neon antum
       analyser.smoothingTimeConstant = 0.8;
       analyserRef.current = analyser;
 
-      // Hubungkan elemen audio ke jalur engine
+      // Hubungkan satu tag <audio> tersembunyi ke Web Audio API Engine
       const source = audioCtx.createMediaElementSource(audioRef.current);
       source.connect(analyser);
       analyser.connect(audioCtx.destination);
       sourceRef.current = source;
 
       isInitialized.current = true;
-      console.log("✅ Audio Engine Radio RSM Aktif");
+      console.log("✅ Audio Engine Virtual Radio RSM Aktif Terpusat");
     } catch (err) {
       console.error("Gagal inisialisasi Audio Engine:", err);
     }
   }, []);
 
-  // Clean up saat komponen mati
+  // Bersihkan audio context saat komponen mengalami unmount
   useEffect(() => {
     return () => {
       if (audioContextRef.current) {
@@ -68,12 +116,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ===============================
-  // TOGGLE PLAY (LIVE STREAM LOGIC)
+  // ⚡ TOGGLE PLAY (VIRTUAL LIVE STREAM SYNC LOGIC)
   // ===============================
   const togglePlay = async () => {
     if (!audioRef.current) return;
     
-    // Pastikan engine aktif saat user klik pertama kali
+    // Aktifkan engine canvas saat tombol ditekan pertama kali
     if (!isInitialized.current) initAudio();
 
     const audio = audioRef.current;
@@ -82,30 +130,43 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     try {
       if (isPlaying) {
         audio.pause();
-        // ✅ TRICK: Untuk Live Stream, kosongkan src saat stop agar tidak buffering tertunda
-        audio.src = ""; 
+        audio.src = ""; // Flush source agar menghemat bandwidth & stop buffering di latar belakang
         audio.load();
         setIsPlaying(false);
       } else {
         setHasError(false);
         
-        // Kembalikan URL aslinya sebelum play
-        audio.src = streamUrl;
-        audio.load();
+        // 🚀 AMBIL DATA DARI GERBANG CLOUD
+        const res = await fetch("/api/get-current-radio", { cache: "no-store" });
+        const data = await res.json();
 
-        if (audioCtx && audioCtx.state === "suspended") {
-          await audioCtx.resume();
-        }
+        if (data && data.active) {
+          // Isi source dengan file .mp3 terjadwal yang ditunjuk database
+          audio.src = data.audio_url;
+          audio.load();
 
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => setIsPlaying(true))
-            .catch((err) => {
-              console.warn("Autoplay diblokir atau Server Offline:", err);
-              setHasError(true);
-              setIsPlaying(false);
-            });
+          // Lompat serempak ke detik yang sama persis di seluruh dunia!
+          audio.currentTime = data.elapsed_seconds;
+
+          if (audioCtx && audioCtx.state === "suspended") {
+            await audioCtx.resume();
+          }
+
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                setIsPlaying(true);
+                setHasError(false);
+              })
+              .catch((err) => {
+                console.warn("Autoplay diblokir browser atau berkas terputus:", err);
+                setHasError(true);
+                setIsPlaying(false);
+              });
+          }
+        } else {
+          alert("Saat ini sedang tidak ada siaran terjadwal yang aktif di cloud, Ris.");
         }
       }
     } catch (err) {
@@ -115,10 +176,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AudioContext.Provider value={{ isPlaying, hasError, togglePlay, analyserRef }}>
+    <AudioContext.Provider value={{ isPlaying, hasError, metadata, listeners, togglePlay, analyserRef }}>
       <audio
         ref={audioRef}
-        crossOrigin="anonymous" // Wajib buat visualizer
+        crossOrigin="anonymous" // Wajib terpasang demi kelancaran visualizer Canvas
         preload="none"
         onPause={() => setIsPlaying(false)}
         onPlay={() => {
@@ -126,10 +187,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           setHasError(false);
         }}
         onError={() => {
-          // ✅ JANGAN PAKAI ALERT! Silent error handling.
           setHasError(true);
           setIsPlaying(false);
-          console.warn("⚠️ Radio RSM Offline / CORS Issue");
+          console.warn("⚠️ Virtual Radio RSM Offline / CORS Issue");
         }}
         className="hidden"
       />

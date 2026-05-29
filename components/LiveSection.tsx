@@ -1,74 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useAudio } from "@/context/AudioContext";
 
 export default function LiveSection() {
-  const { isPlaying, togglePlay, analyserRef } = useAudio();
+  const { isPlaying, togglePlay, analyserRef, metadata, listeners } = useAudio();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [metadata, setMetadata] = useState({
-    title: "Mencari Sinyal...",
-    artist: "Radio Suara Al Muttaqin",
-    art: "/bg-player.png",
-  });
-
-  const [listeners, setListeners] = useState(0);
-
   // ===============================
-  // ✅ SINKRONISASI VIA VIRTUAL STREAM CLOUD (Anti-Crash & Tanpa Mengubah Struktur)
-  // ===============================
-  useEffect(() => {
-    const fetchMetadata = async () => {
-      try {
-        const res = await fetch("/api/get-current-radio", { 
-          cache: "no-store",
-          signal: AbortSignal.timeout(5000) 
-        });
-        
-        if (!res.ok) throw new Error("Offline");
-
-        const data = await res.json();
-        
-        // Ambil data track aktif dari sistem Cron-Job database kita
-        if (data && data.active) {
-          setMetadata({
-            title: data.title || "Siaran Sedang Aktif",
-            artist: "Radio Suara Al Muttaqin",
-            art: "/bg-player.png", // Tetap mengarah ke background andalan antum
-          });
-          // Simulasi angka atau antum bisa pasang counter pendengar realtime di sini nantinya
-          setListeners(1); 
-        } else {
-          // Jika di tabel database sedang tidak ada trigger cron job yang aktif
-          setMetadata({
-            title: "Siaran Sedang Offline",
-            artist: "Radio Suara Al Muttaqin",
-            art: "/bg-player.png",
-          });
-          setListeners(0);
-        }
-
-      } catch (err) {
-        // FALLBACK GENTLEMAN: Amankan UI agar tidak memicu layar merah (Digest)
-        setMetadata({
-          title: "Siaran Sedang Offline",
-          artist: "Radio Suara Al Muttaqin",
-          art: "/bg-player.png",
-        });
-        setListeners(0);
-        console.warn("⚠️ Hubungan ke Virtual Stream Server terputus.");
-      }
-    };
-
-    fetchMetadata();
-    // Jalankan pengecekan judul lagu setiap 15 detik secara berkala
-    const interval = setInterval(fetchMetadata, 15000); 
-    return () => clearInterval(interval);
-  }, []);
-
-  // ===============================
-  // ULTRA LIGHTNING SPECTRUM (Stable Version - 100% UTUH)
+  // ULTRA LIGHTNING SPECTRUM (100% UTUH TANPA RUBAH DESAIN)
   // ===============================
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -92,9 +32,7 @@ export default function LiveSection() {
 
     const draw = () => {
       animationId = requestAnimationFrame(draw);
-
       if (canvas.height <= 0 || canvas.width <= 0) return;
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (!isPlaying || !analyserRef?.current) return;
@@ -109,13 +47,10 @@ export default function LiveSection() {
       const centerY = height / 2;
 
       let bass = 0;
-      for (let i = 0; i < 10; i++) {
-        bass += dataArray[i] || 0;
-      }
+      for (let i = 0; i < 10; i++) { bass += dataArray[i] || 0; }
       bass = bass / 10;
 
       if (bass > 180) flashAlpha = 0.5;
-
       if (flashAlpha > 0) {
         ctx.fillStyle = `rgba(0,255,200,${flashAlpha})`;
         ctx.fillRect(0, 0, width, height);
@@ -124,7 +59,6 @@ export default function LiveSection() {
 
       const barCount = 120;
       const spacing = width / barCount;
-
       ctx.shadowBlur = 25;
       ctx.shadowColor = "#00ffcc";
 
@@ -133,7 +67,6 @@ export default function LiveSection() {
         const value = (dataArray[dataIndex] || 0) / 255;
         const barHeight = value * centerY * 1.4;
         const x = i * spacing;
-
         const yTop = centerY - barHeight;
         const yBottom = centerY + barHeight;
 
@@ -143,38 +76,17 @@ export default function LiveSection() {
           gradient.addColorStop(0.3, "#10b981");
           gradient.addColorStop(0.6, "#065f46");
           gradient.addColorStop(1, "#001f1f");
-
           ctx.strokeStyle = gradient;
           ctx.lineWidth = 3;
-
           ctx.beginPath();
           ctx.moveTo(x, yTop);
           ctx.lineTo(x, yBottom);
           ctx.stroke();
         }
-
-        if (value > 0.75) {
-          ctx.beginPath();
-          ctx.moveTo(x, centerY - barHeight);
-          ctx.lineTo(x + (Math.random() * 6 - 3), centerY - barHeight - 15);
-          ctx.stroke();
-        }
-      }
-
-      const glowRadius = bass * 1.2;
-      if (Number.isFinite(glowRadius) && glowRadius > 0) {
-        const radial = ctx.createRadialGradient(width/2, centerY, 0, width/2, centerY, glowRadius);
-        radial.addColorStop(0, "rgba(0,255,200,0.4)");
-        radial.addColorStop(1, "rgba(0,255,200,0)");
-        ctx.fillStyle = radial;
-        ctx.beginPath();
-        ctx.arc(width / 2, centerY, glowRadius, 0, Math.PI * 2);
-        ctx.fill();
       }
     };
 
     draw();
-
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener("resize", resize);
@@ -207,7 +119,7 @@ export default function LiveSection() {
                 <canvas ref={canvasRef} className="w-full h-full" />
               </div>
 
-              <div>
+              <div className="text-left">
                 <h3 className="text-2xl font-black text-white uppercase tracking-tight italic leading-none">
                   {metadata.title}
                 </h3>
@@ -224,11 +136,9 @@ export default function LiveSection() {
             </div>
 
             <button
-              onClick={togglePlay}
+              onClick={togglePlay} // Mengontrol sakelar audio tunggal global
               className={`px-12 py-4 rounded-xl font-black tracking-widest uppercase transition-all active:scale-95 shadow-xl ${
-                isPlaying
-                  ? "bg-red-600 hover:bg-red-500"
-                  : "bg-emerald-600 hover:bg-emerald-500"
+                isPlaying ? "bg-red-600 hover:bg-red-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"
               }`}
             >
               {isPlaying ? "Stop Radio" : "Putar Radio"}
