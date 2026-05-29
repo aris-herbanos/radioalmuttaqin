@@ -2,6 +2,8 @@ import prisma from "@/lib/prisma";
 import { approveRequest } from "./actions";
 import DeleteButton from "./DeleteButton"; 
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 export default async function RequestsPage() {
   const requests = await prisma.songRequest.findMany({
     orderBy: { created_at: "desc" },
