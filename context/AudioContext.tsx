@@ -25,7 +25,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const isInitialized = useRef(false); // Kunci emas agar tidak double-init audio context
+  const isInitialized = useRef(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -37,7 +37,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   });
 
   // ===============================
-  // 📻 FETCH METADATA UPDATE JADWAL DARI DATABASE
+  // FETCH METADATA UPDATE JADWAL DARI DATABASE
   // ===============================
   const fetchMetadata = useCallback(async () => {
     try {
@@ -51,7 +51,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           artist: "Radio Suara Al Muttaqin",
           art: "/bg-player.png",
         });
-        setListeners(1); // Penanda ada trek aktif
+        setListeners(1);
       } else {
         setMetadata({
           title: "Siaran Sedang Offline",
@@ -70,7 +70,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Sinkronisasi metadata periodik setiap 15 detik
   useEffect(() => {
     fetchMetadata();
     const interval = setInterval(fetchMetadata, 15000);
@@ -78,7 +77,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, [fetchMetadata]);
 
   // ===============================
-  // 🎛️ INIT AUDIO ENGINE (WEB AUDIO API FOR CANVAS)
+  // INIT AUDIO ENGINE (WEB AUDIO API)
   // ===============================
   const initAudio = useCallback(() => {
     if (isInitialized.current || !audioRef.current) return;
@@ -89,11 +88,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audioContextRef.current = audioCtx;
 
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256; // Ringan dan responsif untuk efek visualizer petir neon antum
+      analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.8;
       analyserRef.current = analyser;
 
-      // Hubungkan satu tag <audio> tersembunyi ke Web Audio API Engine
       const source = audioCtx.createMediaElementSource(audioRef.current);
       source.connect(analyser);
       analyser.connect(audioCtx.destination);
@@ -106,86 +104,85 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Bersihkan audio context saat komponen mengalami unmount
-  useEffect(() => {
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-    };
-  }, []);
-
   // ===============================
-  // ⚡ TOGGLE PLAY (VIRTUAL LIVE STREAM SYNC LOGIC)
+  // LOGIKA UTAMA MEMUTAR LIVE SYNC (DIPISAH AGAR BISA DIPANGGIL RECURSIVE)
   // ===============================
-  const togglePlay = async () => {
+  const startPlayback = useCallback(async () => {
     if (!audioRef.current) return;
-    
-    // Aktifkan engine canvas saat tombol ditekan pertama kali
-    if (!isInitialized.current) initAudio();
-
     const audio = audioRef.current;
     const audioCtx = audioContextRef.current;
 
     try {
-      if (isPlaying) {
-        audio.pause();
-        audio.src = ""; // Flush source agar menghemat bandwidth & stop buffering di latar belakang
+      const res = await fetch("/api/get-current-radio", { cache: "no-store" });
+      const data = await res.json();
+
+      if (data && data.active) {
+        // Daftarkan URL baru dan set detik lompatannya
+        audio.src = data.audio_url;
         audio.load();
-        setIsPlaying(false);
-      } else {
-        setHasError(false);
-        
-        // 🚀 AMBIL DATA DARI GERBANG CLOUD
-        const res = await fetch("/api/get-current-radio", { cache: "no-store" });
-        const data = await res.json();
+        audio.currentTime = data.elapsed_seconds;
 
-        if (data && data.active) {
-          // Isi source dengan file .mp3 terjadwal yang ditunjuk database
-          audio.src = data.audio_url;
-          audio.load();
-
-          // Lompat serempak ke detik yang sama persis di seluruh dunia!
-          audio.currentTime = data.elapsed_seconds;
-
-          if (audioCtx && audioCtx.state === "suspended") {
-            await audioCtx.resume();
-          }
-
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-            playPromise
-              .then(() => {
-                setIsPlaying(true);
-                setHasError(false);
-              })
-              .catch((err) => {
-                console.warn("Autoplay diblokir browser atau berkas terputus:", err);
-                setHasError(true);
-                setIsPlaying(false);
-              });
-          }
-        } else {
-          alert("Saat ini sedang tidak ada siaran terjadwal yang aktif di cloud, Ris.");
+        if (audioCtx && audioCtx.state === "suspended") {
+          await audioCtx.resume();
         }
+
+        await audio.play();
+        setIsPlaying(true);
+        setHasError(false);
+        // Perbarui judul player secara instan tanpa menunggu interval 15 detik
+        setMetadata(prev => ({ ...prev, title: data.title })); 
+      } else {
+        setIsPlaying(false);
       }
     } catch (err) {
+      console.error("Gagal memulai playback:", err);
       setHasError(true);
       setIsPlaying(false);
     }
+  }, []);
+
+  // SAKELAR TOMBOL PLAY / PAUSE GLOBAL
+  const togglePlay = async () => {
+    if (!audioRef.current) return;
+    if (!isInitialized.current) initAudio();
+
+    if (isPlaying) {
+      audioRef.current.pause();
+      audioRef.current.src = ""; // Flush buffer stream
+      audioRef.current.load();
+      setIsPlaying(false);
+    } else {
+      setHasError(false);
+      await startPlayback();
+    }
   };
+
+  // 🚀 RE-SYNC OTOMATIS SAAT LAGU SELESAI (Pindah ke file berikutnya)
+  const handleAudioEnded = async () => {
+    console.log("🎵 File MP3 selesai diputar. Melompat ke track virtual berikutnya...");
+    if (isPlaying) {
+      await startPlayback(); // Panggil fungsi putar lagi untuk mengambil track selanjutnya dari API
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) audioContextRef.current.close();
+    };
+  }, []);
 
   return (
     <AudioContext.Provider value={{ isPlaying, hasError, metadata, listeners, togglePlay, analyserRef }}>
       <audio
         ref={audioRef}
-        crossOrigin="anonymous" // Wajib terpasang demi kelancaran visualizer Canvas
+        crossOrigin="anonymous"
         preload="none"
         onPause={() => setIsPlaying(false)}
         onPlay={() => {
           setIsPlaying(true);
           setHasError(false);
         }}
+        onEnded={handleAudioEnded} // 👈 🚀 INI KUNCI EMASNYA, NAUFAL!
         onError={() => {
           setHasError(true);
           setIsPlaying(false);
