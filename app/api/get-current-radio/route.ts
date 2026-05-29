@@ -2,8 +2,15 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
-// 📥 1. DAFTAR AUDIO CADANGAN (Isi dengan banyak file MP3 terpisah dari Supabase Storage)
-// Catatan: Wajib sertakan durasi masing-masing file dalam satuan detik (seconds)
+// =================================================================
+// 📻 1. KONFIGURASI JINGLE OTOMATIS (Masing-masing 10 Menit Sekali)
+// =================================================================
+const JINGLE_URL = "https://sdit.my.id/radio/jingle.MP3"; 
+const JINGLE_DURATION = 15; // 💡 Durasi jingle wajib pas dalam hitungan detik
+
+// =================================================================
+// 📥 2. DAFTAR AUDIO CADANGAN (FILLER PLAYLIST)
+// =================================================================
 const FILLER_PLAYLIST = [
   {
     title: "Murottal Jeda - Surah Al-Mulk",
@@ -15,12 +22,7 @@ const FILLER_PLAYLIST = [
     url: "https://sdit.my.id/radio/Rikhie-Asbo.mp3",
     duration: 300, // 5 menit
   },
-  {
-    title: "Nasyid Jeda - Thola'al Badru",
-    url: "https://xxxx.supabase.co/storage/v1/object/public/radio-audio/tholaal.mp3",
-    duration: 240, // 4 menit
-  },
-  // 💡 Antum bisa tambah sebanyak mungkin file MP3 cadangan ke bawah sini...
+ 
 ];
 
 // Helper untuk menghitung total durasi seluruh playlist cadangan
@@ -47,7 +49,6 @@ function getVirtualFillerTrack(gapSeconds: number) {
     accumulatedTime += track.duration;
   }
 
-  // Fallback jika terjadi anomali perhitungan, balikkan lagu pertama
   return {
     title: FILLER_PLAYLIST[0].title,
     audio_url: FILLER_PLAYLIST[0].url,
@@ -57,13 +58,32 @@ function getVirtualFillerTrack(gapSeconds: number) {
 
 export async function GET() {
   try {
+    const now = new Date();
+    const currentMinute = now.getMinutes();
+    const currentSecond = now.getSeconds();
+
+    // =================================================================
+    // ⚡ LAPISAN A: LOGIKA PENYELA JINGLE (Memicu Otomatis Tiap Kelipatan 10 Menit)
+    // =================================================================
+    // Contoh: Jam 10:00, 10:10, 10:20, 10:30, 10:40, 10:50 pada 15 detik pertama
+    if (currentMinute % 10 === 0 && currentSecond < JINGLE_DURATION) {
+      return NextResponse.json({
+        active: true,
+        title: "Jingle Suara Al Muttaqin",
+        audio_url: JINGLE_URL,
+        elapsed_seconds: currentSecond // Jika jemaah masuk di tengah jingle, jalurnya tetap lurus sinkron!
+      });
+    }
+
+    // Ambil data jadwal siaran utama dari database Supabase
     const currentTrack = await prisma.radioStream.findFirst();
 
-    // SITUASI A: JIKA TIDAK ADA JADWAL CRON JOB SAMA SEKALI DI DATABASE
+    // =================================================================
+    // 📻 SITUASI B: JIKA TIDAK ADA JADWAL UTAMA SAMA SEKALI DI DATABASE
+    // =================================================================
     if (!currentTrack) {
-      const now = new Date().getTime() / 1000;
-      // Gunakan timestamp waktu dunia saat ini sebagai basis detik jeda virtual
-      const currentFiller = getVirtualFillerTrack(now);
+      const nowTimestampSeconds = Math.floor(Date.now() / 1000);
+      const currentFiller = getVirtualFillerTrack(nowTimestampSeconds);
       
       return NextResponse.json({
         active: true,
@@ -74,33 +94,37 @@ export async function GET() {
     }
 
     const startTime = new Date(currentTrack.start_time).getTime();
-    const now = new Date().getTime();
-    const elapsedSeconds = (now - startTime) / 1000;
+    const nowTimestamp = Date.now();
+    const elapsedSeconds = (nowTimestamp - startTime) / 1000;
 
-    // 🚀 SITUASI B: LOGIKA PENYELAMAT KEKOSONGAN (Misal materi siaran utama sudah habis duluan)
+    // =================================================================
+    // 🚀 SITUASI C: LOGIKA PENYELAMAT KEKOSONGAN (Materi Kajian Utama Habis Duluan)
+    // =================================================================
     if (elapsedSeconds >= currentTrack.duration) {
       const gapSeconds = elapsedSeconds - currentTrack.duration;
-      
-      // Ambil lagu cadangan yang pas secara otomatis sesuai detik kekosongan saat ini
       const currentFiller = getVirtualFillerTrack(gapSeconds);
 
       return NextResponse.json({
         active: true,
         title: currentFiller.title,
         audio_url: currentFiller.audio_url,
-        elapsed_seconds: currentFiller.elapsed_seconds // Tetap lompat serempak!
+        elapsed_seconds: currentFiller.elapsed_seconds
       });
     }
 
-    // SITUASI C: KONDISI NORMAL (Audio utama masih bersiaran)
+    // =================================================================
+    // 🟢 SITUASI D: KONDISI NORMAL (Audio utama siaran Cron Job sedang mengudara)
+    // =================================================================
     return NextResponse.json({
       active: true,
       title: currentTrack.title,
       audio_url: currentTrack.audio_url,
       elapsed_seconds: elapsedSeconds
     });
+
   } catch (error: any) {
-    // Jika database drop/stun, langsung putar lagu pertama dari playlist cadangan agar radio gak hening
+    console.error("⚠️ Gagal memuat get-current-radio (Database Stun/Timeout):", error);
+    // Jalur penyelamat instan jika database mengalami kendala koneksi agar radio tidak hening
     return NextResponse.json({
       active: true,
       title: FILLER_PLAYLIST[0].title,
