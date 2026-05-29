@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { crypto } from "crypto"; // Library bawaan Node.js untuk membuat UUID aman
+
+// 🟢 FIX IMPOR: Pustaka "crypto" Node.js dihapus total dari sini karena Next.js 
+// sudah mendukung objek global web standar 'crypto.randomUUID()' secara langsung!
 
 export async function POST(request: Request) {
   try {
@@ -32,12 +34,12 @@ export async function POST(request: Request) {
       console.warn("⚠️ Gagal melakukan flush data lama (kemungkinan tabel masih kosong):", dbErr);
     }
 
-    // 📥 2. Insert data baru dengan ID buatan Next.js (Anti-Gagal UUID database)
-    const generatedId = crypto.randomUUID(); // Membuat string UUID standar secara instan
+    // 📥 2. Buat UUID menggunakan objek global standard Web API (Mulus & Anti-Crash)
+    const generatedId = crypto.randomUUID(); 
 
     const newStream = await prisma.radioStream.create({
       data: {
-        id: generatedId, // Paksa isi ID dari sini agar database tidak pusing menghitung uuid
+        id: generatedId, // Mengisi kolom UUID di database menggunakan id hasil generate di atas
         title: title,
         audio_url: mp3_url,
         duration: finalDuration,
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("💥 CRASH FATAL PADA API TRIGGER:", error);
     
-    // 💡 INI PENTING: Mengembalikan teks kesalahan asli ke cron-job agar kita tahu persis letak rusaknya
+    // Mengembalikan teks kesalahan asli ke cron-job agar kita tahu persis letak rusaknya jika terjadi kendala lain
     return NextResponse.json(
       { 
         success: false, 
