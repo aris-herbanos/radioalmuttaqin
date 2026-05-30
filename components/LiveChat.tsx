@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { Send, User, MessageSquare, Volume2, Activity, RefreshCcw, Smile } from "lucide-react";
+import { Send, User, MessageSquare, Volume2, RefreshCcw, LogIn } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { sendChatMessage, getChatMessages } from "@/app/actions/chatActions";
+import Link from "next/link";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,6 +17,7 @@ export default function LiveChat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [username, setUsername] = useState("");
+  const [user, setUser] = useState<any>(null);
   const [isSending, setIsSending] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,7 +25,7 @@ export default function LiveChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Fungsi pembantu untuk memformat waktu tanpa error "Invalid Date"
+  // Format waktu anti-Invalid Date
   const formatTime = (dateStr: string | null) => {
     if (!dateStr) return "--:--";
     const date = new Date(dateStr);
@@ -34,15 +36,38 @@ export default function LiveChat() {
 
   const loadMessages = async () => {
     setIsLoading(true);
-    const data = await getChatMessages();
-    setMessages(data || []);
-    setIsLoading(false);
+    try {
+      const data = await getChatMessages();
+      setMessages(data || []);
+    } catch (err) {
+      console.error("💥 Gagal memuat pesan chat:", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadMessages();
 
-    // REALTIME: Memastikan pesan baru muncul seketika tanpa refresh
+    // 🟢 AMANKAN SESI USER: Ambil data profile jemaah langsung dari Supabase Auth
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        setUsername(session.user.user_metadata.full_name || session.user.user_metadata.name || "Jemaah Al Muttaqin");
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        setUsername(session.user.user_metadata.full_name || session.user.user_metadata.name || "Jemaah Al Muttaqin");
+      } else {
+        setUser(null);
+        setUsername("");
+      }
+    });
+
+    // REALTIME SUBSCRIPTION
     const channel = supabase.channel("live_chat_radio")
       .on("postgres_changes", 
         { event: "INSERT", schema: "public", table: "chat_messages" }, 
@@ -58,7 +83,10 @@ export default function LiveChat() {
         }
       ).subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { 
+      subscription.unsubscribe();
+      supabase.removeChannel(channel); 
+    };
   }, [isMuted]);
 
   useEffect(() => {
@@ -74,35 +102,35 @@ export default function LiveChat() {
     e.preventDefault();
     if (!newMessage.trim() || !username.trim() || isSending) return;
 
-    // Optimistic Update agar langsung muncul di layar
-    const tempId = Math.random().toString();
-    const tempMsg = {
-      id: tempId,
-      username: username,
-      message: newMessage,
-      created_at: new Date().toISOString()
-    };
-    
-    setMessages((prev) => [...prev, tempMsg]);
     setIsSending(true);
+    const messageContent = newMessage.trim();
 
-    const result = await sendChatMessage(username, newMessage);
+    // 🟢 INTEGRASI SERVER ACTION BERSAFETY TINGGI
+    try {
+      const result = await sendChatMessage(username, messageContent);
 
-    if (result.success) {
-      setNewMessage("");
-    } else {
-      setMessages((prev) => prev.filter(m => m.id !== tempId));
-      alert("Gagal kirim. Sila cek koneksi antum.");
+      if (result && result.success) {
+        setNewMessage("");
+        // Load data ulang secara pasif agar daftar chat tersinkron rapi dari pelayan DB
+        const freshData = await getChatMessages();
+        setMessages(freshData || []);
+      } else {
+        alert("Waduh Fal, gagal kirim pesan. Periksa RLS tabel chat_messages antum di Supabase!");
+      }
+    } catch (err) {
+      console.error("💥 Kendala pengiriman chat:", err);
+      alert("Gagal kirim pesan. Silakan coba beberapa saat lagi.");
+    } finally {
+      setIsSending(false);
     }
-    setIsSending(false);
   };
 
   return (
-    <section className="max-w-5xl mx-auto my-20 overflow-hidden shadow-[0_30px_100px_-15px_rgba(0,0,0,0.08)] rounded-[3rem] bg-white border border-slate-100 grid grid-cols-1 lg:grid-cols-12">
+    <section className="max-w-5xl mx-auto my-20 overflow-hidden shadow-[0_30px_100px_-15px_rgba(0,0,0,0.08)] rounded-[3rem] bg-white border border-slate-100 grid grid-cols-1 lg:grid-cols-12 font-sans">
       <audio ref={audioRef} src="/notify.mp3" preload="auto" />
 
       {/* SIDEBAR - PROFESSIONAL DARK */}
-      <div className="lg:col-span-4 bg-[#022c22] p-10 flex flex-col justify-between border-r border-slate-50">
+      <div className="lg:col-span-4 bg-[#022c22] p-10 flex flex-col justify-between border-r border-slate-50 text-left">
         <div>
           <div className="flex items-center justify-between mb-12">
             <div className="flex items-center gap-2">
@@ -114,7 +142,7 @@ export default function LiveChat() {
             </button>
           </div>
           
-          <h2 className="text-2xl font-black text-white leading-tight mb-2 italic">
+          <h2 className="text-2xl font-black text-white leading-tight mb-2 uppercase italic tracking-tighter">
             INTERAKSI <br /> <span className="text-emerald-400 text-3xl">JAMAAH</span>
           </h2>
           <div className="h-1 w-8 bg-emerald-400 mb-8 rounded-full"></div>
@@ -124,15 +152,15 @@ export default function LiveChat() {
           </p>
         </div>
         
-        <button onClick={loadMessages} className="flex items-center gap-2 text-[10px] font-bold text-emerald-500/30 uppercase tracking-widest hover:text-emerald-400 transition-all">
+        <button onClick={loadMessages} className="flex items-center gap-2 text-[10px] font-bold text-emerald-500/30 uppercase tracking-widest hover:text-emerald-400 transition-all pt-8 lg:pt-0">
           <RefreshCcw size={14} className={isLoading ? "animate-spin" : ""} />
-          Sync Data
+          Sync Data Chat
         </button>
       </div>
 
       {/* CHAT AREA - CLEAN WHITE */}
       <div className="lg:col-span-8 flex flex-col bg-white">
-        <div ref={scrollRef} className="h-[420px] overflow-y-auto p-10 space-y-6 scroll-smooth custom-scrollbar">
+        <div ref={scrollRef} className="h-[420px] overflow-y-auto p-10 space-y-6 scroll-smooth custom-scrollbar text-left">
           {messages.length === 0 && !isLoading ? (
             <div className="h-full flex flex-col items-center justify-center opacity-10 italic">
               <MessageSquare size={48} className="mb-4" />
@@ -147,9 +175,8 @@ export default function LiveChat() {
                     {formatTime(msg.created_at)}
                   </span>
                 </div>
-                {/* Bubble Style yang Modern & Tidak Kaku */}
                 <div className="bg-slate-50 border border-slate-100 px-6 py-3 rounded-[1.8rem] rounded-tl-none shadow-sm max-w-[85%]">
-                  <p className="text-[14px] font-medium text-slate-700 leading-relaxed capitalize">
+                  <p className="text-[14px] font-medium text-slate-700 leading-relaxed break-words">
                     {msg.message}
                   </p>
                 </div>
@@ -158,34 +185,54 @@ export default function LiveChat() {
           )}
         </div>
 
-        {/* INPUT AREA - MODERN & ROUNDED */}
-        <form onSubmit={handleSend} className="p-8 bg-slate-50/30 border-t border-slate-50">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative md:w-1/3">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-              <input
-                type="text" placeholder="Nama..." value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl text-[12px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500/30 transition-all"
-                required
-              />
-            </div>
-            <div className="flex-1 flex gap-3">
-              <input
-                type="text" placeholder="Tulis pesan dakwah..." value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                className="flex-1 px-6 py-4 bg-white border border-slate-200 rounded-2xl text-[12px] font-medium text-slate-800 outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500/30 transition-all placeholder:text-slate-300"
-                required
-              />
-              <button
-                type="submit" disabled={isSending}
-                className="bg-[#022c22] text-white px-8 py-4 rounded-2xl font-black transition-all hover:bg-emerald-800 active:scale-95 disabled:bg-slate-200 shadow-xl shadow-emerald-950/10 flex items-center justify-center"
+        {/* INPUT AREA - SEKARANG DIKUNCI SESI AUTH SUPABASE */}
+        <div className="p-8 bg-slate-50/30 border-t border-slate-50">
+          {!user ? (
+            <div className="py-2 text-center flex flex-col sm:flex-row items-center justify-between gap-4 bg-emerald-50/50 border border-emerald-100/40 px-6 py-4 rounded-2xl">
+              <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wide">
+                Mau ikut mengirimkan pesan salam atau doa dakwah, Fal?
+              </p>
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 bg-[#022c22] hover:bg-emerald-600 text-white font-black text-[9px] uppercase tracking-widest px-5 py-3 rounded-xl shadow-md transition-all whitespace-nowrap"
               >
-                {isSending ? <RefreshCcw size={18} className="animate-spin" /> : <Send size={18} />}
-              </button>
+                <LogIn size={12} /> Login via Google / GitHub
+              </Link>
             </div>
-          </div>
-        </form>
+          ) : (
+            <form onSubmit={handleSend}>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative sm:w-1/3 text-left">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-600" size={14} />
+                  <input
+                    type="text" 
+                    value={username}
+                    disabled
+                    className="w-full pl-10 pr-4 py-4 bg-slate-100/80 border border-slate-200 rounded-2xl text-[12px] font-bold text-slate-600 outline-none cursor-not-allowed select-none"
+                  />
+                </div>
+                <div className="flex-1 flex gap-3">
+                  <input
+                    type="text" 
+                    placeholder="Tulis pesan dakwah antum di sini..." 
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    className="flex-1 px-6 py-4 bg-white border border-slate-200 rounded-2xl text-[12px] font-medium text-slate-800 outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500/30 transition-all placeholder:text-slate-300"
+                    required
+                    disabled={isSending}
+                  />
+                  <button
+                    type="submit" 
+                    disabled={isSending || !newMessage.trim()}
+                    className="bg-[#022c22] text-white px-8 py-4 rounded-2xl font-black transition-all hover:bg-emerald-800 active:scale-95 disabled:bg-slate-200 shadow-xl shadow-emerald-950/10 flex items-center justify-center shrink-0"
+                  >
+                    {isSending ? <RefreshCcw size={18} className="animate-spin" /> : <Send size={18} />}
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </section>
   );
