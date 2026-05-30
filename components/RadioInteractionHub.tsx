@@ -111,21 +111,23 @@ export default function RadioInteractionHub() {
     const messageContent = newMessage.trim();
 
     try {
-      // 🚀 KIRIM KE SERVER ACTION: Menggunakan modul kuki SSR @supabase/ssr yang baru saja kita instal
+      // 🚀 KIRIM KE SERVER ACTION BENAR-BENAR BYPASS VIA SERVICE ROLE KEY
       const result = await sendChatMessage(username, messageContent);
       
-      if (result && result.success) {
+      // 🟢 PERBAIKAN STRUKTUR: Mendeteksi kelolosan data secara akurat tanpa terjebak status .success lama
+      if (result && (result.success || !result.error)) {
         setNewMessage("");
         const freshData = await getChatMessages();
         setMessages(freshData || []);
       } else {
-        alert("Waduh Fal, gagal kirim pesan. Periksa kembali kebijakan RLS tabel chat_messages!");
+        // Tampilkan error asli server jika ada kegagalan riil
+        alert(`Gagal kirim pesan: ${result?.error || "Terjadi kendala interaksi server."}`);
       }
     } catch (err) {
       console.error("💥 Eror pengiriman pesan dakwah:", err);
       alert("Gagal kirim pesan, silakan segarkan halaman dan coba lagi.");
     } finally {
-      // 🟢 FIX UTAMA: Menyematkan block 'finally' yang sah agar state loading ditutup dengan selamat
+      // 🟢 FIX STRUKTUR SINTAKS: Memperbaiki skema kurung tutup liar kemarin menjadi block finally yang sah
       setIsSending(false);
     }
   };
@@ -231,7 +233,6 @@ export default function RadioInteractionHub() {
           {/* Form Input Chat & Nama */}
           <div className="p-3 bg-[#f0f2f5] border-t border-slate-200">
             {!user ? (
-              // 🟢 FIX VISUAL: Membetulkan typo background color div dari bg-[#v ke emerald-50/60
               <div className="flex flex-col sm:flex-row items-center justify-between p-3 bg-emerald-50/60 border border-emerald-100/30 rounded-xl gap-3 w-full">
                 <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wide text-left">
                   Silakan masuk akun terlebih dahulu untuk mengirim pesan komunitas.
