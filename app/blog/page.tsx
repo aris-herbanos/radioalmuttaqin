@@ -21,12 +21,10 @@ export default function WartaJemaahPage() {
       }
 
       try {
-        // Tembak API resmi Blogger murni dari sisi client
         const res = await fetch(
-          `https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts?key=${apiKey}&maxResults=10`
+          `https://www.googleapis.com/blogger/v3/blogs/${blogId}/posts?key=${apiKey}&maxResults=12`
         );
 
-        // 🟢 PELACAK AKURAT: Tangkap detail jika ada kendala hak akses dari Google Cloud
         if (!res.ok) {
           const rawErrorText = await res.text();
           console.error("💥 Detail JSON Error Google:", rawErrorText);
@@ -39,7 +37,7 @@ export default function WartaJemaahPage() {
         setPosts(data.items || []);
       } catch (err: any) {
         console.error("💥 Error Blogger Fetch:", err);
-        setError(err.message || "Gagal memuat warta.");
+        setError(err.message || "Gagal memuat berita.");
       } finally {
         setLoading(false);
       }
@@ -48,97 +46,124 @@ export default function WartaJemaahPage() {
     fetchBloggerPosts();
   }, []);
 
-  // Fungsi pembantu untuk mengekstrak foto pertama dari konten HTML Blogger sebagai thumbnail/cover
   const extractFirstImage = (htmlContent: string) => {
     const match = htmlContent.match(/<img[^>]+src="([^">]+)"/);
     return match ? match[1] : null;
   };
 
-  // Fungsi membersihkan tag HTML agar menjadi teks bersih untuk deskripsi singkat (snippet)
   const cleanSnippet = (htmlContent: string) => {
     return htmlContent
-      .replace(/<[^>]*>/g, "") // Hapus semua tag HTML
-      .substring(0, 120) + "..."; // Potong 120 karakter pertama
+      .replace(/<[^>]*>/g, "")
+      .substring(0, 100) + "...";
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center space-y-4">
-        <Loader2 className="animate-spin text-emerald-600" size={40} />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 italic">
-          Menarik Berita Utama dari Blogger...
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center space-y-4">
+        <Loader2 className="animate-spin text-orange-500" size={36} />
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 animate-pulse">
+          Memperbarui Berita Utama...
         </p>
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-20 pt-10 text-left font-sans">
+    <main className="min-h-screen bg-slate-50 pb-24 pt-8 text-left font-sans antialiased">
       <div className="container mx-auto px-4 max-w-6xl">
         
-        {/* HEADER BARIS UTAMA (Login Jemaah Dibuang Karena Sudah Ada di Navbar Atas) */}
-        <div className="bg-slate-900 p-8 rounded-[2rem] shadow-2xl border-b-4 border-emerald-500 mb-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        {/* HEADER PORTAL ALA LIPUTAN6 */}
+        <div className="border-b border-slate-200 pb-5 mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
-            <h1 className="text-2xl font-black text-white italic uppercase tracking-tighter flex items-center gap-3">
-              <Newspaper className="text-emerald-400" size={24} /> Warta Berita <span className="text-emerald-400">Pondok</span>
+            <div className="inline-flex items-center gap-1.5 bg-orange-500 text-white text-[10px] font-black uppercase px-2.5 py-1 tracking-wider rounded mb-3">
+              <Newspaper size={12} /> Live Update
+            </div>
+            <h1 className="text-3xl font-black text-slate-950 tracking-tight md:text-4xl">
+              Warta <span className="text-orange-500">Pondok</span>
             </h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-2">
+            <p className="text-xs text-slate-500 font-medium mt-1">
               Sinergi Informasi Suara Al Muttaqin Purwokerto
             </p>
+          </div>
+          <div className="text-xs text-slate-500 font-semibold border-l-2 border-orange-500 pl-3 bg-slate-100/60 py-1.5 px-3 rounded-r hidden md:block">
+            {new Date().toLocaleDateString("id-ID", { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}
           </div>
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs font-bold uppercase tracking-wider rounded-lg mb-8 leading-relaxed">
+          <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs font-bold rounded shadow-sm mb-8">
             {error}
           </div>
         )}
 
-        {/* LIST BERITA GRID PREMIUM */}
+        {/* UTAMA / GRID BERITA */}
         {posts.length === 0 && !error ? (
-          <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] py-24 text-center">
-            <BookOpen className="mx-auto text-slate-200 mb-4" size={48} />
-            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Belum ada warta yang diterbitkan di Blogger.</p>
+          <div className="bg-white border border-slate-200 rounded-xl py-24 text-center shadow-sm">
+            <BookOpen className="mx-auto text-slate-300 mb-3" size={44} />
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Belum ada warta terbaru yang diterbitkan.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {posts.map((post) => {
               const coverImage = extractFirstImage(post.content);
               return (
-                <article key={post.id} className="bg-white border border-slate-100 rounded-[2rem] overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col group">
+                <article 
+                  key={post.id} 
+                  className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 flex flex-col group"
+                >
                   
-                  {/* Foto Thumbnail Otomatis */}
-                  <div className="w-full aspect-video bg-slate-100 overflow-hidden relative border-b border-slate-50">
+                  {/* Thumbnail Berita */}
+                  <div className="w-full aspect-[16/10] bg-slate-100 overflow-hidden relative">
+                    <span className="absolute top-3 left-3 z-10 bg-slate-900/80 backdrop-blur-sm text-white text-[9px] font-extrabold uppercase px-2 py-0.5 rounded tracking-wider">
+                      Kabar Jemaah
+                    </span>
                     {coverImage ? (
-                      <img src={coverImage} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <img 
+                        src={coverImage} 
+                        alt={post.title} 
+                        className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500" 
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-slate-300">
-                        <BookOpen size={40} />
+                        <BookOpen size={36} />
                       </div>
                     )}
                   </div>
 
-                  {/* Isi Konten Kartu */}
-                  <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
+                  {/* Konten Berita */}
+                  <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
                     <div className="space-y-2">
-                      <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                        <Calendar size={12} className="text-emerald-500" />
-                        {new Date(post.published).toLocaleDateString("id-ID", { dateStyle: "long" })}
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-semibold">
+                        <Calendar size={13} className="text-orange-500" />
+                        {new Date(post.published).toLocaleDateString("id-ID", { 
+                          dateStyle: "medium" 
+                        })}
                       </div>
-                      <h2 className="text-base font-black text-slate-900 group-hover:text-emerald-600 transition-colors uppercase tracking-tight leading-snug line-clamp-2">
-                        {post.title}
+                      
+                      <h2 className="text-base font-bold text-slate-900 group-hover:text-orange-500 transition-colors duration-200 tracking-tight leading-snug line-clamp-2">
+                        <Link href={`/blog/${post.id}`}>
+                          {post.title}
+                        </Link>
                       </h2>
-                      <p className="text-slate-500 text-xs font-medium leading-relaxed line-clamp-3">
+                      
+                      <p className="text-slate-600 text-xs font-normal leading-relaxed line-clamp-3">
                         {cleanSnippet(post.content)}
                       </p>
                     </div>
 
-                    <Link 
-                      href={`/warta/${post.id}`}
-                      className="inline-flex items-center gap-2 text-[10px] font-black text-emerald-700 hover:text-slate-900 uppercase tracking-widest pt-2 w-max"
-                    >
-                      Baca Selengkapnya <ArrowRight size={12} />
-                    </Link>
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <Link 
+                        href={`/blog/${post.id}`}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-500 group-hover:text-orange-600 transition-colors uppercase tracking-wider"
+                      >
+                        Lihat Detail <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                      </Link>
+                    </div>
                   </div>
 
                 </article>

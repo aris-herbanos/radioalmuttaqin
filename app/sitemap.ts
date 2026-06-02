@@ -37,16 +37,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         priority: 0.8,
       },
       {
-        url: `${baseUrl}/warta`,
+        url: `${baseUrl}/blog`,
         lastModified: new Date(),
         changeFrequency: "daily",
         priority: 0.8,
       },
     ];
 
-    // Gabungkan dengan halaman warta dinamis dari database
+    // Gabungkan dengan halaman blog dinamis dari database
     const dynamicPages: MetadataRoute.Sitemap = articles.map((art) => ({
-      url: `${baseUrl}/warta/${art.slug}`,
+      url: `${baseUrl}/blog/${art.slug}`,
       lastModified: new Date(art.created_at),
       changeFrequency: "monthly",
       priority: 0.6,
@@ -61,7 +61,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     return [
       { url: baseUrl, lastModified: new Date(), changeFrequency: "daily", priority: 1.0 },
       { url: `${baseUrl}/jadwal`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.8 },
-      { url: `${baseUrl}/warta`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
+      { url: `${baseUrl}/blog`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
     ];
   }
 }

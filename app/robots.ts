@@ -6,6 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
     },
-    sitemap: "https://radio-suara-al-muttaqin.vercel.app/sitemap.xml",
+    // 🟢 SINKRONISASI DOMAIN UTAMA: Mengarahkan mesin pencari langsung ke peta situs domain kustom produksi
+    sitemap: "https://www.radioalmuttaqin.com/sitemap.xml",
   }
 }
