@@ -54,16 +54,25 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     return res.json();
   }, []);
 
+  // Mematikan Audio MP3 Secara Bersih
+  const killMp3Playback = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current.load();
+    }
+    lastSyncedUrlRef.current = "";
+    setIsPlaying(false);
+  }, []);
+
   // Load & play MP3 radio
   const applyRadioDataToAudio = useCallback(
     async (data: any, forceReload = false) => {
       if (!audioRef.current || !data?.active || !data.audio_url) return false;
 
-      if (isYouTubeLive && isYouTubePlaying) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-        audioRef.current.load();
-        setIsPlaying(false);
+      // JIKA YOUTUBE SEDANG LIVE & PLAYING: Blokir total pemutaran MP3
+      if (isYouTubePlaying) {
+        killMp3Playback();
         return false;
       }
 
@@ -81,12 +90,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         lastSyncedUrlRef.current !== nextSrc ||
         timeDrift > 8;
 
-      setMetadata({
-        title: data.title || "Siaran Sedang Aktif",
-        artist: "Radio Suara Al Muttaqin",
-        art: "/bg-player.png",
-      });
-      setListeners(1);
+      // Update metadata MP3 hanya jika YouTube tidak sedang memegang kendali UI
+      if (!isYouTubePlaying) {
+        setMetadata({
+          title: data.title || "Siaran Sedang Aktif",
+          artist: "Radio Suara Al Muttaqin",
+          art: "/bg-player.png",
+        });
+        setListeners(1);
+      }
 
       if (!shouldReload) return true;
 
@@ -121,19 +133,22 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.error("Gagal menerapkan audio radio:", err);
         setHasError(true);
+        setIsPlaying(false);
         return false;
       } finally {
         isAutoSwitchingRef.current = false;
       }
     },
-    [isYouTubeLive, isYouTubePlaying]
+    [isYouTubePlaying, killMp3Playback]
   );
 
-  // Fetch metadata
+  // Fetch metadata berkala (Hanya jika YouTube tidak memutar media)
   const fetchMetadata = useCallback(async () => {
+    if (isYouTubePlaying) return; // Lindungi UI jika YouTube sedang ON AIR
+
     try {
       const data = await fetchCurrentRadio();
-      if (data && data.active && !isYouTubeLive) {
+      if (data && data.active) {
         setMetadata({
           title: data.title || "Siaran Sedang Aktif",
           artist: "Radio Suara Al Muttaqin",
@@ -156,7 +171,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       });
       setListeners(0);
     }
-  }, [fetchCurrentRadio, isYouTubeLive]);
+  }, [fetchCurrentRadio, isYouTubePlaying]);
 
   useEffect(() => {
     fetchMetadata();
@@ -164,7 +179,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [fetchMetadata]);
 
-  // Audio Engine
+  // Audio Engine Inisialisasi Web Audio API
   const initAudio = useCallback(() => {
     if (isInitialized.current || !audioRef.current) return;
     try {
@@ -190,7 +205,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const startPlayback = useCallback(async () => {
-    if (isYouTubeLive && isYouTubePlaying) return;
+    if (isYouTubePlaying) return; // Jangan jalankan jika YouTube sedang on air
     try {
       const data = await fetchCurrentRadio();
       if (data && data.active) await applyRadioDataToAudio(data, true);
@@ -200,8 +215,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setHasError(true);
       setIsPlaying(false);
     }
-  }, [applyRadioDataToAudio, fetchCurrentRadio, isYouTubeLive, isYouTubePlaying]);
+  }, [applyRadioDataToAudio, fetchCurrentRadio, isYouTubePlaying]);
 
+  // Handle Klik Tombol (Play/Pause MP3)
   const togglePlay = async () => {
     if (!audioRef.current) return;
     if (!isInitialized.current) initAudio();
@@ -209,35 +225,41 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (isPlaying) {
       userStoppedRef.current = true;
       isAutoSwitchingRef.current = false;
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current.load();
-      lastSyncedUrlRef.current = "";
-      setIsPlaying(false);
+      killMp3Playback();
     } else {
+      // Jika pengguna menyalakan MP3 manual, paksa matikan status YouTube Playing jika sempat tersangkut
       userStoppedRef.current = false;
       setHasError(false);
       await startPlayback();
     }
   };
 
-  // Sync interval
+  // Otomatis matikan MP3 seketika jika komponen mendeteksi `isYouTubePlaying` bernilai TRUE
   useEffect(() => {
-    if (!isPlaying || isYouTubeLive) return;
+    if (isYouTubePlaying && isPlaying) {
+      killMp3Playback();
+    }
+  }, [isYouTubePlaying, isPlaying, killMp3Playback]);
+
+  // Sync interval berkala (Hanya berjalan jika MP3 aktif dan YouTube MATI)
+  useEffect(() => {
+    if (!isPlaying || isYouTubePlaying) return;
+
     const interval = setInterval(async () => {
-      if (userStoppedRef.current) return;
+      if (userStoppedRef.current || isYouTubePlaying) return;
       try {
         const data = await fetchCurrentRadio();
         await applyRadioDataToAudio(data, false);
       } catch (err) {
-        console.error(err);
+        console.error("Sync interval error:", err);
       }
     }, 5000);
+
     return () => clearInterval(interval);
-  }, [isPlaying, isYouTubeLive, applyRadioDataToAudio, fetchCurrentRadio]);
+  }, [isPlaying, isYouTubePlaying, applyRadioDataToAudio, fetchCurrentRadio]);
 
   const handleAudioEnded = async () => {
-    if (userStoppedRef.current || (isYouTubeLive && isYouTubePlaying)) return;
+    if (userStoppedRef.current || isYouTubePlaying) return;
     setIsPlaying(true);
     await startPlayback();
   };

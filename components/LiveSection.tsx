@@ -23,11 +23,12 @@ export default function LiveSection() {
     metadata = { title: "Radio Suara Al Muttaqin", artist: "Virtual Auto DJ", art: "/bg-player.png" },
     listeners = 0,
     setIsYouTubeLive,
-    isYouTubePlaying,
+    isYouTubePlaying = false,
     setIsYouTubePlaying,
   } = useAudio() || {};
 
   const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
+  const [liveTitle, setLiveTitle] = useState<string | null>(null);
   const playerRef = useRef<any>(null);
   const iframeContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,18 +55,26 @@ export default function LiveSection() {
       const data = await res.json();
       if (data.items && data.items.length > 0) {
         const videoId = data.items[0].id.videoId;
+        const title = data.items[0].snippet.title;
         setYoutubeVideoId(videoId);
+        setLiveTitle(title);
         setIsYouTubeLive?.(true);
       } else {
         setYoutubeVideoId(null);
+        setLiveTitle(null);
         setIsYouTubeLive?.(false);
-        setIsYouTubePlaying(false);
+        if (isYouTubePlaying) {
+          setIsYouTubePlaying?.(false);
+        }
       }
     } catch (err) {
       console.error("YouTube API error", err);
       setYoutubeVideoId(null);
+      setLiveTitle(null);
       setIsYouTubeLive?.(false);
-      setIsYouTubePlaying(false);
+      if (isYouTubePlaying) {
+        setIsYouTubePlaying?.(false);
+      }
     }
   }
 
@@ -76,14 +85,26 @@ export default function LiveSection() {
   }, []);
 
   // ==========================
-  // Play button handler
+  // Play/Stop Action Handler
   // ==========================
-  const handlePlayClick = async () => {
-    // Jika YouTube Live tersedia, mainkan YouTube
-    if (youtubeVideoId && window.YT && iframeContainerRef.current) {
-      // Stop MP3
-      if (isPlaying) togglePlay();
+  const handlePlayClick = () => {
+    // KONDISI 1: Jika YouTube sedang menyala -> STOP YOUTUBE
+    if (isYouTubePlaying) {
+      if (playerRef.current && typeof playerRef.current.pauseVideo === "function") {
+        playerRef.current.pauseVideo();
+      }
+      setIsYouTubePlaying?.(false);
+      return;
+    }
 
+    // KONDISI 2: Jika MP3 Audio sedang menyala -> STOP MP3
+    if (isPlaying) {
+      togglePlay(); // Mematikan MP3 bawaan context
+      return;
+    }
+
+    // KONDISI 3: Semua mati, dan ada Live YouTube -> UTAMAKAN YOUTUBE LIVE
+    if (youtubeVideoId && window.YT && iframeContainerRef.current) {
       if (!playerRef.current) {
         playerRef.current = new window.YT.Player(iframeContainerRef.current, {
           videoId: youtubeVideoId,
@@ -97,27 +118,41 @@ export default function LiveSection() {
           events: {
             onReady: (event: any) => {
               event.target.playVideo();
-              setIsYouTubePlaying(true);
+              setIsYouTubePlaying?.(true);
             },
             onStateChange: (event: any) => {
-              if (event.data === 0 || event.data === 2) setIsYouTubePlaying(false); // end/pause
+              // Menyinkronkan jika user stop manual melalui interaksi eksternal (unlikely but safe)
+              if (event.data === 0 || event.data === 2) {
+                setIsYouTubePlaying?.(false);
+              } else if (event.data === 1) {
+                setIsYouTubePlaying?.(true);
+              }
             },
           },
         });
       } else {
         playerRef.current.loadVideoById(youtubeVideoId);
         playerRef.current.playVideo();
-        setIsYouTubePlaying(true);
+        setIsYouTubePlaying?.(true);
       }
-    } else {
-      // Jika tidak live, jalankan MP3 radio
-      togglePlay();
-      setIsYouTubePlaying(false);
+      return;
     }
+
+    // KONDISI 4: Tidak ada YouTube Live -> JALANKAN MP3 RADIO BIASA
+    togglePlay();
   };
 
+  // Ensure iframe cleaner on unmount
+  useEffect(() => {
+    return () => {
+      if (playerRef.current && typeof playerRef.current.destroy === "function") {
+        playerRef.current.destroy();
+      }
+    };
+  }, []);
+
   // ==========================
-  // Visualizer
+  // Visualizer (Sesuai kode awal Anda)
   // ==========================
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -140,6 +175,8 @@ export default function LiveSection() {
       animationId = requestAnimationFrame(draw);
       if (!canvas.width || !canvas.height) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Tetap berjalan jika salah satu aktif
       if ((!isPlaying && !isYouTubePlaying) || !analyserRef?.current) return;
 
       const analyser = analyserRef.current;
@@ -198,9 +235,10 @@ export default function LiveSection() {
     };
   }, [isPlaying, isYouTubePlaying, analyserRef]);
 
-  // ==========================
-  // JSX
-  // ==========================
+  // Dynamic Metadata Info
+  const displayTitle = isYouTubePlaying && liveTitle ? liveTitle : metadata?.title;
+  const displayArtist = isYouTubePlaying ? "LIVE STREAMING YOUTUBE" : metadata?.artist;
+
   return (
     <section className="relative overflow-hidden bg-black py-12 sm:py-16 lg:py-20 px-4 sm:px-6">
       <div className="absolute inset-0 bg-gradient-to-b from-black via-emerald-950/80 to-black" />
@@ -209,7 +247,7 @@ export default function LiveSection() {
         {/* TITLE */}
         <div className="text-center mb-6 sm:mb-8 lg:mb-10">
           <h2 className="text-sm sm:text-lg md:text-xl lg:text-2xl font-black text-emerald-400 uppercase tracking-[0.2em] sm:tracking-[0.35em]">
-            ⚡ ON AIR NOW ⚡
+            {isYouTubePlaying ? "🔴 LIVE STREAMING" : "⚡ ON AIR NOW ⚡"}
           </h2>
         </div>
 
@@ -221,10 +259,10 @@ export default function LiveSection() {
             <div className="relative w-32 h-32 sm:w-40 sm:h-40 lg:w-44 lg:h-44 shrink-0">
               <div className="absolute inset-0 rounded-2xl bg-emerald-500/20 blur-3xl animate-pulse" />
               <img
-                src={isYouTubePlaying && youtubeVideoId
+                src={youtubeVideoId
                   ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
                   : metadata?.art || "/bg-player.png"}
-                alt={metadata?.title}
+                alt={displayTitle || "Radio"}
                 onError={(e) => { (e.target as HTMLImageElement).src = "/bg-player.png"; }}
                 className="relative z-10 w-full h-full object-cover rounded-2xl border border-white/20"
               />
@@ -236,11 +274,11 @@ export default function LiveSection() {
                 <canvas ref={canvasRef} className="w-full h-full" />
               </div>
               <div className="mt-4 text-center md:text-left">
-                <h3 className="text-lg sm:text-xl lg:text-2xl font-black text-white leading-tight">
-                  {metadata?.title}
+                <h3 className="text-lg sm:text-xl lg:text-2xl font-black text-white leading-tight line-clamp-2">
+                  {displayTitle}
                 </h3>
-                <p className="mt-2 text-xs sm:text-sm text-emerald-400 uppercase tracking-wider">
-                  {metadata?.artist}
+                <p className="mt-2 text-xs sm:text-sm text-emerald-400 uppercase tracking-wider font-semibold">
+                  {displayArtist}
                 </p>
               </div>
             </div>
@@ -256,8 +294,8 @@ export default function LiveSection() {
               onClick={handlePlayClick}
               className={`w-full sm:w-auto px-6 sm:px-8 lg:px-12 py-3 lg:py-4 rounded-xl font-black uppercase tracking-wide transition-all active:scale-95 ${
                 isPlaying || isYouTubePlaying
-                  ? "bg-red-600 hover:bg-red-500 text-white"
-                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  ? "bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30"
               }`}
             >
               {isPlaying || isYouTubePlaying ? "Stop Radio" : "Putar Radio"}
@@ -265,8 +303,8 @@ export default function LiveSection() {
           </div>
         </div>
 
-        {/* YouTube Player (hidden) */}
-        <div ref={iframeContainerRef} style={{ width: 1, height: 1, opacity: 0, overflow: "hidden" }} />
+        {/* YouTube Player Container (Hidden) */}
+        <div ref={iframeContainerRef} style={{ width: 1, height: 1, opacity: 0, overflow: "hidden", position: "absolute", zIndex: -1 }} />
       </div>
     </section>
   );
