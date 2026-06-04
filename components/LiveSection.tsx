@@ -23,6 +23,7 @@ export default function LiveSection() {
     metadata = { title: "Radio Suara Al Muttaqin", artist: "Virtual Auto DJ", art: "/bg-player.png" },
     listeners = 0,
     setIsYouTubeLive,
+    setIsPlaying, // <-- pastikan ini tersedia dari context
   } = useAudio() || {};
 
   const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
@@ -75,7 +76,8 @@ export default function LiveSection() {
   // Play YouTube Live on user click
   // ==========================
   const handlePlayClick = async () => {
-    togglePlay(); // hentikan MP3 / start radio
+    // Jika YouTube live tersedia, stop MP3 dulu
+    togglePlay();
 
     if (youtubeVideoId && window.YT && iframeContainerRef.current) {
       if (!playerRef.current) {
@@ -91,12 +93,14 @@ export default function LiveSection() {
           events: {
             onReady: (event: any) => {
               event.target.playVideo();
+              setIsPlaying?.(true); // <-- update tombol menjadi Stop Radio
             },
           },
         });
       } else {
         playerRef.current.loadVideoById(youtubeVideoId);
         playerRef.current.playVideo();
+        setIsPlaying?.(true); // <-- update tombol
       }
     }
   };
@@ -248,7 +252,7 @@ export default function LiveSection() {
           </div>
         </div>
 
-        {/* YouTube Live Player (audio-only, minimal visible) */}
+        {/* YouTube Live Player (audio-only, hidden) */}
         <div ref={iframeContainerRef} style={{ width: 1, height: 1, opacity: 0, overflow: "hidden" }} />
 
       </div>
