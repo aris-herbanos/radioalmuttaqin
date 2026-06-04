@@ -5,6 +5,7 @@ import { useAudio } from "@/context/AudioContext";
 
 export const dynamic = "force-dynamic";
 
+// Gunakan environment variable
 const YOUTUBE_CHANNEL_ID = process.env.NEXT_PUBLIC_YOUTUBE_CHANNEL_ID!;
 const API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY!;
 
@@ -19,9 +20,10 @@ export default function LiveSection() {
       art: "/bg-player.png",
     },
     listeners = 0,
+    setIsYouTubeLive,
   } = useAudio() || {};
 
-  const [isYouTubeLive, setIsYouTubeLive] = useState(false);
+  const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ==========================
@@ -30,22 +32,27 @@ export default function LiveSection() {
   async function checkYouTubeLiveStatus() {
     try {
       const res = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&type=video&eventType=live&key=${YOUTUBE_API_KEY}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&type=video&eventType=live&key=${API_KEY}`
       );
       const data = await res.json();
-      const live = data.items && data.items.length > 0;
-      setIsYouTubeLive(live);
+      if (data.items && data.items.length > 0) {
+        const videoId = data.items[0].id.videoId;
+        setYoutubeVideoId(videoId);
+        setIsYouTubeLive?.(true);
+      } else {
+        setYoutubeVideoId(null);
+        setIsYouTubeLive?.(false);
+      }
     } catch (err) {
       console.error("YouTube API error", err);
-      setIsYouTubeLive(false);
+      setYoutubeVideoId(null);
+      setIsYouTubeLive?.(false);
     }
   }
 
   useEffect(() => {
-    // cek saat mount
-    checkYouTubeLiveStatus();
-    // interval setiap 30 detik
-    const interval = setInterval(checkYouTubeLiveStatus, 30000);
+    checkYouTubeLiveStatus(); // cek saat mount
+    const interval = setInterval(checkYouTubeLiveStatus, 30000); // cek tiap 30 detik
     return () => clearInterval(interval);
   }, []);
 
@@ -65,10 +72,10 @@ export default function LiveSection() {
   // Override MP3 saat live
   // ==========================
   useEffect(() => {
-    if (isYouTubeLive && isPlaying) {
+    if (youtubeVideoId && isPlaying) {
       togglePlay(); // pause MP3 agar digantikan live
     }
-  }, [isYouTubeLive]);
+  }, [youtubeVideoId]);
 
   // ==========================
   // Visualizer
@@ -84,7 +91,6 @@ export default function LiveSection() {
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
     };
-
     resize();
     window.addEventListener("resize", resize);
 
@@ -154,7 +160,7 @@ export default function LiveSection() {
   }, [isPlaying, analyserRef]);
 
   // ==========================
-  // JSX (tidak diubah desain)
+  // JSX
   // ==========================
   return (
     <section className="relative overflow-hidden bg-black py-12 sm:py-16 lg:py-20 px-4 sm:px-6">
@@ -220,6 +226,18 @@ export default function LiveSection() {
             </button>
           </div>
         </div>
+
+        {/* ==========================
+            Embed YouTube Live (hidden audio) 
+        ========================== */}
+        {youtubeVideoId && (
+          <iframe
+            style={{ display: "none" }}
+            src={`https://www.youtube.com/embed/${youtubeVideoId}?autoplay=1`}
+            allow="autoplay"
+          />
+        )}
+
       </div>
     </section>
   );
