@@ -23,10 +23,10 @@ export default function LiveSection() {
     metadata = { title: "Radio Suara Al Muttaqin", artist: "Virtual Auto DJ", art: "/bg-player.png" },
     listeners = 0,
     setIsYouTubeLive,
-    setIsPlaying, // <-- pastikan ini tersedia dari context
   } = useAudio() || {};
 
   const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
+  const [ytPlaying, setYtPlaying] = useState(false); // <-- state lokal untuk YouTube
   const playerRef = useRef<any>(null);
   const iframeContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,11 +58,13 @@ export default function LiveSection() {
       } else {
         setYoutubeVideoId(null);
         setIsYouTubeLive?.(false);
+        setYtPlaying(false);
       }
     } catch (err) {
       console.error("YouTube API error", err);
       setYoutubeVideoId(null);
       setIsYouTubeLive?.(false);
+      setYtPlaying(false);
     }
   }
 
@@ -76,8 +78,7 @@ export default function LiveSection() {
   // Play YouTube Live on user click
   // ==========================
   const handlePlayClick = async () => {
-    // Jika YouTube live tersedia, stop MP3 dulu
-    togglePlay();
+    togglePlay(); // hentikan MP3 radio
 
     if (youtubeVideoId && window.YT && iframeContainerRef.current) {
       if (!playerRef.current) {
@@ -93,14 +94,17 @@ export default function LiveSection() {
           events: {
             onReady: (event: any) => {
               event.target.playVideo();
-              setIsPlaying?.(true); // <-- update tombol menjadi Stop Radio
+              setYtPlaying(true); // update tombol
+            },
+            onStateChange: (event: any) => {
+              if (event.data === 0 || event.data === 2) setYtPlaying(false); // end/pause
             },
           },
         });
       } else {
         playerRef.current.loadVideoById(youtubeVideoId);
         playerRef.current.playVideo();
-        setIsPlaying?.(true); // <-- update tombol
+        setYtPlaying(true);
       }
     }
   };
@@ -129,7 +133,7 @@ export default function LiveSection() {
       animationId = requestAnimationFrame(draw);
       if (!canvas.width || !canvas.height) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!isPlaying || !analyserRef?.current) return;
+      if ((!isPlaying && !ytPlaying) || !analyserRef?.current) return;
 
       const analyser = analyserRef.current;
       const bufferLength = analyser.frequencyBinCount;
@@ -185,7 +189,7 @@ export default function LiveSection() {
       cancelAnimationFrame(animationId);
       window.removeEventListener("resize", resize);
     };
-  }, [isPlaying, analyserRef]);
+  }, [isPlaying, ytPlaying, analyserRef]);
 
   return (
     <section className="relative overflow-hidden bg-black py-12 sm:py-16 lg:py-20 px-4 sm:px-6">
@@ -242,12 +246,12 @@ export default function LiveSection() {
               type="button"
               onClick={handlePlayClick}
               className={`w-full sm:w-auto px-6 sm:px-8 lg:px-12 py-3 lg:py-4 rounded-xl font-black uppercase tracking-wide transition-all active:scale-95 ${
-                isPlaying
+                isPlaying || ytPlaying
                   ? "bg-red-600 hover:bg-red-500 text-white"
                   : "bg-emerald-600 hover:bg-emerald-500 text-white"
               }`}
             >
-              {isPlaying ? "Stop Radio" : "Putar Radio"}
+              {isPlaying || ytPlaying ? "Stop Radio" : "Putar Radio"}
             </button>
           </div>
         </div>
