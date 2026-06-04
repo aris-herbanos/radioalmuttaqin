@@ -9,25 +9,41 @@ export const dynamic = "force-dynamic";
 const YOUTUBE_CHANNEL_ID = process.env.NEXT_PUBLIC_YOUTUBE_CHANNEL_ID!;
 const API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY!;
 
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: any;
+  }
+}
+
 export default function LiveSection() {
   const {
     isPlaying = false,
     togglePlay = () => {},
     analyserRef,
-    metadata = {
-      title: "Radio Suara Al Muttaqin",
-      artist: "Virtual Auto DJ",
-      art: "/bg-player.png",
-    },
+    metadata = { title: "Radio Suara Al Muttaqin", artist: "Virtual Auto DJ", art: "/bg-player.png" },
     listeners = 0,
     setIsYouTubeLive,
   } = useAudio() || {};
 
   const [youtubeVideoId, setYoutubeVideoId] = useState<string | null>(null);
+  const playerRef = useRef<any>(null);
+  const iframeContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ==========================
-  // YouTube Live Detection
+  // Load YouTube IFrame API
+  // ==========================
+  useEffect(() => {
+    if (!window.YT) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.body.appendChild(tag);
+    }
+  }, []);
+
+  // ==========================
+  // Check YouTube Live
   // ==========================
   async function checkYouTubeLiveStatus() {
     try {
@@ -39,8 +55,7 @@ export default function LiveSection() {
         const videoId = data.items[0].id.videoId;
         setYoutubeVideoId(videoId);
         setIsYouTubeLive?.(true);
-        // Force stop MP3 saat live aktif
-        if (isPlaying) togglePlay();
+        if (isPlaying) togglePlay(); // pause MP3
       } else {
         setYoutubeVideoId(null);
         setIsYouTubeLive?.(false);
@@ -53,22 +68,40 @@ export default function LiveSection() {
   }
 
   useEffect(() => {
-    checkYouTubeLiveStatus(); // cek saat mount
-    const interval = setInterval(checkYouTubeLiveStatus, 30000); // cek tiap 30 detik
+    checkYouTubeLiveStatus();
+    const interval = setInterval(checkYouTubeLiveStatus, 30000);
     return () => clearInterval(interval);
   }, [isPlaying]);
 
   // ==========================
-  // Persistent playback
+  // Init YouTube Player when videoId changes
   // ==========================
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem("isPlaying") || "false");
-    if (saved && !isPlaying) togglePlay();
-  }, []);
+    if (!youtubeVideoId || !window.YT || !iframeContainerRef.current) return;
 
-  useEffect(() => {
-    localStorage.setItem("isPlaying", JSON.stringify(isPlaying));
-  }, [isPlaying]);
+    if (playerRef.current) {
+      playerRef.current.loadVideoById(youtubeVideoId);
+      return;
+    }
+
+    window.onYouTubeIframeAPIReady = () => {
+      playerRef.current = new window.YT.Player(iframeContainerRef.current, {
+        videoId: youtubeVideoId,
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          modestbranding: 1,
+          rel: 0,
+          mute: 0,
+        },
+        events: {
+          onReady: (event: any) => {
+            event.target.playVideo();
+          },
+        },
+      });
+    };
+  }, [youtubeVideoId]);
 
   // ==========================
   // Visualizer
@@ -152,9 +185,6 @@ export default function LiveSection() {
     };
   }, [isPlaying, analyserRef]);
 
-  // ==========================
-  // JSX (tidak ubah desain)
-  // ==========================
   return (
     <section className="relative overflow-hidden bg-black py-12 sm:py-16 lg:py-20 px-4 sm:px-6">
       <div className="absolute inset-0 bg-gradient-to-b from-black via-emerald-950/80 to-black" />
@@ -221,18 +251,9 @@ export default function LiveSection() {
         </div>
 
         {/* ==========================
-            Embed YouTube Live (audio-only, minimal visible agar autoplay jalan)
+            YouTube Live Player (audio-only, minimal visible)
         ========================== */}
-        {youtubeVideoId && (
-          <iframe
-            width={300}
-            height={50}
-            src={`https://www.youtube.com/embed/${youtubeVideoId}?autoplay=1&mute=0`}
-            allow="autoplay; encrypted-media"
-            title="YouTube Live Audio"
-            style={{ border: "none" }}
-          />
-        )}
+        <div ref={iframeContainerRef} style={{ width: 0, height: 0, overflow: "hidden" }} />
 
       </div>
     </section>

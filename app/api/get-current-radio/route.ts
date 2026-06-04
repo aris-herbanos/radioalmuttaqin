@@ -14,12 +14,12 @@ const FILLER_PLAYLIST = [
   {
     title: "Murottal Jeda - Surah Al-Mulk",
     url: "https://sdit.my.id/radio/SurahAlMulk-Saad-Al-Ghamdi.mp3",
-    duration: 180,
+    duration: 1800,
   },
   {
     title: "Nasyid Jeda - Rikhie Asbo",
     url: "https://sdit.my.id/radio/Rikhie-Asbo.mp3",
-    duration: 300,
+    duration: 3600,
   },
 ];
 
