@@ -209,17 +209,12 @@ export async function GET() {
     const nowTimestamp = Date.now();
     const elapsedSeconds = (nowTimestamp - startTime) / 1000;
 
-    // =================================================================
-    // KUNCI PERBAIKAN: JALUR DURASI DINAMIS
-    // =================================================================
-    // Kita gunakan nilai limit durasi dari kolom database (misal: currentTrack.target_duration).
-    // Jika kolom target_duration tidak ada, dia otomatis fallback ke durasi asli berkas MP3-nya.
-    const allowedDuration = currentTrack.target_duration && currentTrack.target_duration > 0
-      ? currentTrack.target_duration 
-      : currentTrack.duration;
+    // SOLUSI TS: Langsung gunakan `currentTrack.duration` yang sudah divalidasi oleh Prisma.
+    // Pastikan skrip pembuat jadwal (POST) memasukkan nilai batasan menit (2700, 3600, 7200) ke kolom ini.
+    const allowedDuration = currentTrack.duration;
 
     // =================================================================
-    // D. JIKA AUDIO UTAMA MELEBIHI JATAH SLOT (DINAMIS), LANJUT FILLER
+    // D. JIKA AUDIO UTAMA MELEBIHI JATAH SLOT, LANJUT FILLER
     // =================================================================
     if (elapsedSeconds >= allowedDuration) {
       const gapSeconds = elapsedSeconds - allowedDuration;
