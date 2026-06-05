@@ -16,7 +16,7 @@ export default function JadwalPage() {
     { jam: "13:00 - 14:00", acara: "Kajian Tematik", deskripsi: "Pengajian tematik yang mengupas tentang topik-topik kekinian." },
     { jam: "16:00 - 17:00", acara: "Taujih Sore Ust. Sartono", deskripsi: "Siraman rohani untuk menyegarkan iman di waktu sore." },
     { jam: "17:15 - 18:15", acara: "Murottal Anak", deskripsi: "Lantunan ayat suci Al-Qur'an merdu untuk buah hati di waktu petang." },
-	{ jam: "18:15 - 19:15", acara: "Nasyid Anak", deskripsi: "Nasyid Anak Islam" },
+	{ jam: "18:15 - 19:15", acara: "Murotal Merdu", deskripsi: "Murotal Abu usamah" },
     { jam: "19:30 - 21:00", acara: "Tazkiyatun Nafs", deskripsi: "Kajian pembersihan jiwa untuk kedekatan hamba dengan Sang Kholiq." },
     { jam: "21:00 - 22:00", acara: "Kajian Parenting", deskripsi: "Panduan mendidik anak sesuai sunnah dan tuntunan syariat." },
     { jam: "22:00 - 23:00", acara: "Nasyid Lawas", deskripsi: "Nostalgia nasyid bermakna untuk menemani waktu istirahat malam." },
