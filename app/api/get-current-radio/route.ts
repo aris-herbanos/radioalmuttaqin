@@ -8,7 +8,7 @@ const JINGLE_URL = "https://sdit.my.id/radio/jingle.MP3";
 const JINGLE_DURATION = 15;
 
 // =================================================================
-// 2. DAFTAR AUDIO CADANGAN
+// 2. DAFTAR AUDIO CADANGAN (FILLER)
 // =================================================================
 const FILLER_PLAYLIST = [
   {
@@ -46,7 +46,6 @@ const FILLER_PLAYLIST = [
     url: "https://ia801406.us.archive.org/8/items/abdullahal-mathrud/003-Ali-Imran.mp3",
     duration: 4800,
   },
-
 ];
 
 const TOTAL_FILLER_DURATION = FILLER_PLAYLIST.reduce(
@@ -77,7 +76,7 @@ function getVirtualFillerTrack(gapSeconds: number) {
     };
   }
 
-  const virtualTimeline = gapSeconds % TOTAL_FILLER_DURATION;
+  const virtualTimeline = Math.floor(gapSeconds) % TOTAL_FILLER_DURATION;
   let accumulatedTime = 0;
 
   for (const track of FILLER_PLAYLIST) {
@@ -100,15 +99,8 @@ function getVirtualFillerTrack(gapSeconds: number) {
 }
 
 async function getYouTubeLiveFromChannel() {
-  const channelId =
-    process.env.YOUTUBE_CHANNEL_ID ||
-    process.env.NEXT_PUBLIC_YOUTUBE_CHANNEL_ID ||
-    "";
-
-  const apiKey =
-    process.env.YOUTUBE_API_KEY ||
-    process.env.NEXT_PUBLIC_YOUTUBE_API_KEY ||
-    "";
+  const channelId = process.env.YOUTUBE_CHANNEL_ID || process.env.NEXT_PUBLIC_YOUTUBE_CHANNEL_ID || "";
+  const apiKey = process.env.YOUTUBE_API_KEY || process.env.NEXT_PUBLIC_YOUTUBE_API_KEY || "";
 
   if (!channelId || !apiKey) return null;
 
@@ -121,14 +113,8 @@ async function getYouTubeLiveFromChannel() {
     url.searchParams.set("maxResults", "1");
     url.searchParams.set("key", apiKey);
 
-    const res = await fetch(url.toString(), {
-      next: { revalidate: 30 },
-    });
-
-    if (!res.ok) {
-      console.warn("Gagal cek YouTube live:", res.status, await res.text());
-      return null;
-    }
+    const res = await fetch(url.toString(), { next: { revalidate: 30 } });
+    if (!res.ok) return null;
 
     const data = await res.json();
     const item = data.items?.[0];
@@ -139,15 +125,10 @@ async function getYouTubeLiveFromChannel() {
     return {
       videoId,
       title: item.snippet?.title || "YouTube Live Streaming",
-      thumbnail:
-        item.snippet?.thumbnails?.high?.url ||
-        item.snippet?.thumbnails?.medium?.url ||
-        item.snippet?.thumbnails?.default?.url ||
-        `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+      thumbnail: item.snippet?.thumbnails?.high?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       url: `https://www.youtube.com/watch?v=${videoId}`,
     };
-  } catch (error) {
-    console.error("Gagal cek YouTube live dari channel:", error);
+  } catch {
     return null;
   }
 }
@@ -159,10 +140,9 @@ export async function GET() {
     const currentSecond = now.getSeconds();
 
     // =================================================================
-    // 0. PRIORITAS UTAMA: DETEKSI YOUTUBE LIVE DARI CHANNEL
+    // 0. PRIORITAS UTAMA: DETEKSI YOUTUBE LIVE
     // =================================================================
     const youtubeLive = await getYouTubeLiveFromChannel();
-
     if (youtubeLive) {
       return NextResponse.json({
         active: true,
@@ -175,12 +155,9 @@ export async function GET() {
       });
     }
 
-    // =================================================================
-    // 0B. FALLBACK OPSIONAL: URL MANUAL JIKA MASIH INGIN DIPAKAI
-    // =================================================================
+    // Fallback Manual YouTube Live
     const isManualYouTubeLive = process.env.YOUTUBE_LIVE === "1";
     const manualYouTubeLiveUrl = process.env.YOUTUBE_LIVE_URL || "";
-
     if (isManualYouTubeLive && manualYouTubeLiveUrl) {
       return NextResponse.json({
         active: true,
@@ -193,7 +170,7 @@ export async function GET() {
     }
 
     // =================================================================
-    // A. JINGLE TIAP 5 MENIT, TAPI TIDAK DI MENIT 00
+    // A. JINGLE TIAP 5 MENIT
     // =================================================================
     if (currentMinute % 5 === 0 && currentMinute !== 0 && currentSecond < JINGLE_DURATION) {
       return NextResponse.json({
@@ -233,10 +210,19 @@ export async function GET() {
     const elapsedSeconds = (nowTimestamp - startTime) / 1000;
 
     // =================================================================
-    // D. JIKA AUDIO UTAMA SUDAH HABIS, LANJUT FILLER
+    // KUNCI PERBAIKAN: JALUR DURASI DINAMIS
     // =================================================================
-    if (elapsedSeconds >= currentTrack.duration) {
-      const gapSeconds = elapsedSeconds - currentTrack.duration;
+    // Kita gunakan nilai limit durasi dari kolom database (misal: currentTrack.target_duration).
+    // Jika kolom target_duration tidak ada, dia otomatis fallback ke durasi asli berkas MP3-nya.
+    const allowedDuration = currentTrack.target_duration && currentTrack.target_duration > 0
+      ? currentTrack.target_duration 
+      : currentTrack.duration;
+
+    // =================================================================
+    // D. JIKA AUDIO UTAMA MELEBIHI JATAH SLOT (DINAMIS), LANJUT FILLER
+    // =================================================================
+    if (elapsedSeconds >= allowedDuration) {
+      const gapSeconds = elapsedSeconds - allowedDuration;
       const currentFiller = getVirtualFillerTrack(gapSeconds);
 
       return NextResponse.json({
@@ -250,7 +236,7 @@ export async function GET() {
     }
 
     // =================================================================
-    // E. KONDISI NORMAL: TAMPILKAN NAMA FILE AUDIO YANG SEDANG DIPUTAR
+    // E. KONDISI NORMAL
     // =================================================================
     return NextResponse.json({
       active: true,
@@ -262,7 +248,6 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error("Gagal memuat get-current-radio:", error);
-
     return NextResponse.json({
       active: true,
       title: FILLER_PLAYLIST[0].title,
