@@ -148,7 +148,16 @@ export default function DetailWartaPage() {
     return [...sameLabelPosts, ...fallbackPosts].slice(0, 6);
   }, [otherPosts, post?.labels]);
 
-  const popularPosts = otherPosts.slice(0, 5);
+  // --- MODIFIKASI DISINI: BIKIN WIDGET POPULER JADI RANDOM ---
+  const popularPosts = useMemo(() => {
+    if (otherPosts.length === 0) return [];
+    
+    // Melakukan kloning array agar tidak memutasi array asli, lalu diacak secara random
+    return [...otherPosts]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 5);
+  }, [otherPosts]);
+
   const latestPosts = otherPosts.slice(0, 5);
 
   const renderContentWithBacaJuga = (htmlContent: string) => {
