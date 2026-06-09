@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { client } from "../../../sanity/lib/client"; 
 
 export const dynamic = "force-dynamic"; // Memaksa API selalu fresh tanpa membeku di cache Vercel
+export const revalidate = 0; // Mematikan optimasi cache statis Vercel secara total demi suara real-time
 
 // =================================================================
 // 1. KONFIGURASI JINGLE OTOMATIS
@@ -61,7 +62,6 @@ const TOTAL_FILLER_DURATION = FILLER_PLAYLIST.reduce(
 // Fungsi pembantu mengubah string "HH:MM" menjadi total menit
 const timeToMinutes = (timeStr: string): number => {
   if (!timeStr) return 0;
-  // Memastikan pemisahan string tetap aman meski admin menulis pakai tanda titik (.) atau titik dua (:)
   const cleanTime = timeStr.replace('.', ':');
   const [hours, minutes] = cleanTime.split(':').map(Number);
   return (hours || 0) * 60 + (minutes || 0);
@@ -111,11 +111,19 @@ function getVirtualFillerTrack(gapSeconds: number) {
   };
 }
 
+// 🟢 HELPER HEADERS ANTI-BUFF: Memaksa HTTP response bebas sisa cache jaringan demi transmisi suara jernih
+const getSecureHeaders = () => {
+  return {
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+  };
+};
+
 // =================================================================
 // MAIN HANDLER GET
 // =================================================================
 export async function GET() {
-  // Variabel penampung cadangan jadwal agar cakupan cakrawala data tetap aman
   let cachedSchedules: any[] = [];
 
   try {
@@ -150,10 +158,8 @@ export async function GET() {
       const config = await client.fetch(sanityQuery, {}, { cache: 'no-store' });
 
       if (config && config.schedules && Array.isArray(config.schedules)) {
-        // Amankan array jadwal asli Sanity ke variabel penampung global
         cachedSchedules = config.schedules;
 
-        // Ekstraksi Waktu lokal Asia/Jakarta (WIB) yang antipeluru di Vercel Server
         const timeFormatter = new Intl.DateTimeFormat('id-ID', {
           timeZone: 'Asia/Jakarta',
           hour: '2-digit',
@@ -169,7 +175,6 @@ export async function GET() {
         
         const currentTotalMinutes = currentHours * 60 + currentMinutes;
 
-        // Ekstraksi Nama Hari Bahasa Inggris sesuai opsi value di skema Sanity antum
         const dayFormatter = new Intl.DateTimeFormat('en-US', {
           timeZone: 'Asia/Jakarta',
           weekday: 'long'
@@ -181,15 +186,11 @@ export async function GET() {
           const start = timeToMinutes(schedule.startTime);
           const end = timeToMinutes(schedule.endTime);
 
-          // Evaluasi Jam & Hari dibikin super toleran (case-insensitive & dipotong spasi liar)
           const isTimeMatch = currentTotalMinutes >= start && currentTotalMinutes < end;
           
           const sDay = (schedule.day || '').trim().toLowerCase();
           const cDay = currentDayName.trim().toLowerCase();
           const isDayMatch = sDay === 'everyday' || sDay === cDay;
-
-          // 🔍 DEBUGGING LOG: Memantau kecocokan data langsung di terminal proyek Anda
-          console.log(`[Sanity Sync] Program: ${schedule.eventName} | Hari: ${schedule.day} vs ${currentDayName} (${isDayMatch}) | Jam: ${schedule.startTime}-${schedule.endTime} vs Sekarang (${isTimeMatch})`);
 
           if (isTimeMatch && isDayMatch) {
             activeSchedule = schedule;
@@ -197,7 +198,6 @@ export async function GET() {
           }
         }
 
-        // JIKA MENEMUKAN JADWAL YANG AKTIF SAAT INI
         if (activeSchedule) {
           const stationName = config.radioName || "Radio Suara Al Muttaqin";
           const startMinutes = timeToMinutes(activeSchedule.startTime);
@@ -217,8 +217,8 @@ export async function GET() {
               program_title: stationName,
               audio_url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
               elapsed_seconds: 0,
-              allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-            });
+              allSchedules: cachedSchedules
+            }, { headers: getSecureHeaders() });
           }
 
           // --- 📻 CASE B: MODE TRANSMISI RELAY STREAM (RADIO FM LAIN) ---
@@ -234,8 +234,8 @@ export async function GET() {
               program_title: stationName,
               audio_url: relayUrl,
               elapsed_seconds: 0,
-              allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-            });
+              allSchedules: cachedSchedules
+            }, { headers: getSecureHeaders() });
           }
 
           // --- 🎵 CASE C: MODE TRANSMISI PLAYLIST MP3 CLOUD ---
@@ -257,10 +257,9 @@ export async function GET() {
               program_title: stationName,
               audio_url: selectedTrack?.audioFileUrl || null,
               elapsed_seconds: trackElapsedSeconds,
-              allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-            });
+              allSchedules: cachedSchedules
+            }, { headers: getSecureHeaders() });
           } else {
-            // BACKUP FILLER INTERNAL SANITY: Jika playlist di dokumen aktif kosong, putar filler otomatis
             const totalFillerTracks = FILLER_PLAYLIST.length;
             const totalTrackIndexTimeline = Math.floor(secondsSinceScheduleStarted / ASSUMED_TRACK_DURATION);
             const currentFillerIndex = totalTrackIndexTimeline % totalFillerTracks;
@@ -278,8 +277,8 @@ export async function GET() {
               program_title: activeSchedule.eventName || stationName,
               audio_url: selectedFiller.url,
               elapsed_seconds: trackElapsedSeconds,
-              allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-            });
+              allSchedules: cachedSchedules
+            }, { headers: getSecureHeaders() });
           }
         }
       }
@@ -287,7 +286,6 @@ export async function GET() {
       console.error("Gagal memproses otomatisasi jadwal Sanity CMS:", sanityError);
     }
 
-    // Ambal ulang menit dan detik untuk jingle cadangan
     const freshNow = new Date();
     const currentMinute = freshNow.getMinutes();
     const currentSecond = freshNow.getSeconds();
@@ -303,8 +301,8 @@ export async function GET() {
         audio_url: JINGLE_URL,
         elapsed_seconds: currentSecond,
         type: "jingle",
-        allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-      });
+        allSchedules: cachedSchedules
+      }, { headers: getSecureHeaders() });
     }
 
     // =================================================================
@@ -330,8 +328,8 @@ export async function GET() {
         audio_url: currentFiller.audio_url,
         elapsed_seconds: currentFiller.elapsed_seconds,
         type: "filler",
-        allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-      });
+        allSchedules: cachedSchedules
+      }, { headers: getSecureHeaders() });
     }
 
     const startTime = new Date(currentTrack.start_time).getTime();
@@ -355,8 +353,8 @@ export async function GET() {
         audio_url: currentFiller.audio_url,
         elapsed_seconds: currentFiller.elapsed_seconds,
         type: "filler",
-        allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-      });
+        allSchedules: cachedSchedules
+      }, { headers: getSecureHeaders() });
     }
 
     // =================================================================
@@ -369,8 +367,8 @@ export async function GET() {
       audio_url: currentTrack.audio_url,
       elapsed_seconds: elapsedSeconds,
       type: "main",
-      allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-    });
+      allSchedules: cachedSchedules
+    }, { headers: getSecureHeaders() });
 
   } catch (error: any) {
     console.error("Gagal membuat get-current-radio emergency block:", error);
@@ -383,7 +381,7 @@ export async function GET() {
       audio_url: emergencyFiller.audio_url,
       elapsed_seconds: emergencyFiller.elapsed_seconds,
       type: "fallback",
-      allSchedules: cachedSchedules // 🟢 SUNTIKAN SINKRONISASI JADWAL
-    });
+      allSchedules: cachedSchedules
+    }, { headers: getSecureHeaders() });
   }
 }

@@ -30,7 +30,6 @@ interface AudioContextType {
 
 const AudioContext = createContext<AudioContextType | null>(null);
 
-// Fungsi utama: Menghubungi backend terpadu get-current-radio (Tanpa cache)
 async function fetchCurrentRadioStatusFromBackend() {
   const res = await fetch("/api/get-current-radio", { cache: "no-store" });
   if (!res.ok) throw new Error("Radio API offline");
@@ -39,7 +38,7 @@ async function fetchCurrentRadioStatusFromBackend() {
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const youtubeToggleRef = useRef<(() => void) | null>(null);
@@ -80,6 +79,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const JINGLE_INTERVAL = 5 * 60 * 1000; 
   const JINGLE_FILE = "/audio/jingle.mp3";
 
+  // 🟢 OPTIMASI MUTE SUARA: Menghentikan audio MP3 internal dengan halus tanpa memutus sambungan buffer
   const stopMp3Playback = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -99,14 +99,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     isAutoSwitchingRef.current = false;
 
     try {
-      audio.volume = 0;
+      audio.pause(); // Langsung pause untuk menghemat kuota streaming relay/MP3 jemaah
     } catch (e) {
-      console.warn("Mute handling error:", e);
+      console.warn("Pause handling error:", e);
     }
     
     setIsPlaying(false);
   }, []);
 
+  // 🟢 BUFFER RESET ANTI-SENDAT: Mengosongkan memori audio secara mutlak untuk mode transisi berat
   const resetMp3PlaybackCompletely = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -190,91 +191,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [JINGLE_FILE]);
 
-  // =================================================================
-  // LOGIKA BARU: KONSUMSI LANGSUNG HASIL PENYARINGAN BACKEND API
-  // =================================================================
-  const fetchMetadata = useCallback(async () => {
-    try {
-      const data = await fetchCurrentRadioStatusFromBackend(); 
-      
-      // Jika backend menyatakan siaran offline/gagal muat data dokumen
-      if (!data || !data.active) {
-        setIsYouTubeLive(false);
-        setMetadata({ 
-          title: data?.title || "Siaran Sedang Offline", 
-          artist: data?.artist || "Radio Suara Al Muttaqin", 
-          art: "/bg-player.png" 
-        });
-        setListeners(0);
-        return;
-      }
-
-      // KONDISI A: JALUR LIVE STREAMING YOUTUBE
-      if (data.type === "youtube_live") {
-        resetMp3PlaybackCompletely();
-        setYoutubeVideoId(data.youtube_video_id);
-        setIsYouTubeLive(true);
-        setMetadata({
-          title: data.title || "Live Streaming YouTube",
-          artist: data.artist || "Pondok Pesantren Al Muttaqin",
-          art: data.thumbnail || "/bg-player.png",
-        });
-        setListeners(1);
-        return;
-      }
-      
-      // KONDISI B: JALUR PLAYLIST MP3 (SANITY ATAU FILLER)
-      if (data.type === "playlist_mp3" || data.audio_url) {
-        setIsYouTubeLive(false);
-        setYoutubeVideoId(null);
-        
-        setMetadata({
-          title: data.title || "Radio Suara Al Muttaqin",
-          artist: data.artist || "Menginspirasi Hati Menguatkan Iman",
-          art: data.thumbnail || "/bg-player.png",
-        });
-
-        const audio = audioRef.current;
-        if (audio && data.audio_url) {
-          // Sinkronisasi ganti lagu/source audio baru
-          if (audio.src !== data.audio_url) {
-            audio.src = data.audio_url;
-            audio.load();
-            
-            // JALANKAN CATCH-UP SEEK: Lompatkan detik player ke detik berjalan riil di server
-            if (data.elapsed_seconds && data.elapsed_seconds > 2) {
-              audio.currentTime = data.elapsed_seconds;
-            }
-
-            if (isPlayingRef.current) {
-              audio.play().catch(err => console.warn("Autoplay block protection:", err));
-            }
-          } else {
-            // JIKA URL-NYA SAMA (LAGU YANG SAMA), TERAPKAN TOLERANSI SELISIH DETEKSI DETIK (MAX SELISIH 6 DETIK)
-            // Ini untuk mencegah lagu loncat-loncat akibat delay koneksi fetch berkala
-            if (data.elapsed_seconds && Math.abs(audio.currentTime - data.elapsed_seconds) > 6) {
-              audio.currentTime = data.elapsed_seconds;
-            }
-          }
-        }
-        
-        setListeners(1);
-        return;
-      }
-
-    } catch (error) {
-      console.error("Gagal sinkronisasi data stream radio:", error);
-      setMetadata({ title: "Hubungan Terputus...", artist: "Radio Suara Al Muttaqin", art: "/bg-player.png" });
-      setListeners(0);
-    }
-  }, [resetMp3PlaybackCompletely]);
-
-  useEffect(() => {
-    fetchMetadata();
-    const interval = setInterval(fetchMetadata, 15000); // Polling metadata fresh per 15 detik
-    return () => clearInterval(interval);
-  }, [fetchMetadata]);
-
+  // Inisialisasi Audio Engine Web Audio API secara aman & jernih
   const initAudio = useCallback(() => {
     if (isInitialized.current || !audioRef.current) return;
 
@@ -307,11 +224,103 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // =================================================================
+  // POLLING SYNC: KONSUMSI MONITORING LIVE STREAMING & RELAY AUDIO JERNIH
+  // =================================================================
+  const fetchMetadata = useCallback(async () => {
+    try {
+      const data = await fetchCurrentRadioStatusFromBackend(); 
+      
+      if (!data || !data.active) {
+        setIsYouTubeLive(false);
+        setMetadata({ 
+          title: data?.title || "Siaran Sedang Offline", 
+          artist: data?.artist || "Radio Suara Al Muttaqin", 
+          art: "/bg-player.png" 
+        });
+        setListeners(0);
+        return;
+      }
+
+      // 🔴 CASE A: AREA TRANSMISI YOUTUBE LIVE
+      if (data.type === "youtube_live") {
+        if (isPlayingRef.current) {
+          stopMp3Playback();
+        }
+        setYoutubeVideoId(data.youtube_video_id);
+        setIsYouTubeLive(true);
+        setMetadata({
+          title: data.title || "Live Streaming YouTube",
+          artist: data.artist || "Pondok Pesantren Al Muttaqin",
+          art: data.thumbnail || "/bg-player.png",
+        });
+        setListeners(1);
+        return;
+      }
+      
+      // 🔴 CASE B: AREA TRANSMISI AUDIO STREAM MP3 / RELAY RADIO FM LAIN
+      if (data.type === "playlist_mp3" || data.type === "relay_stream" || data.audio_url) {
+        setIsYouTubeLive(false);
+        setYoutubeVideoId(null);
+        
+        setMetadata({
+          title: data.title || "Radio Suara Al Muttaqin",
+          artist: data.artist || "Menginspirasi Hati Menguatkan Iman",
+          art: data.thumbnail || "/bg-player.png",
+        });
+
+        const audio = audioRef.current;
+        if (audio && data.audio_url) {
+          
+          // 🟢 PENANGANAN RELAY DAN BUFFER ANTI LONCAT:
+          if (audio.src !== data.audio_url) {
+            audio.src = data.audio_url;
+            audio.load();
+            
+            // JALANKAN SEEK CATCH-UP HANYA JIKA BUKAN RELAY LIVE AUDIO LIVE
+            if (data.type !== "relay_stream" && data.elapsed_seconds && data.elapsed_seconds > 2) {
+              audio.currentTime = data.elapsed_seconds;
+            }
+
+            if (isPlayingRef.current) {
+              audio.play().catch(err => console.warn("Autoplay block protection:", err));
+            }
+          } else {
+            // JIKA AKAN MEMUTAR FILE STENGAH JALAN (CATCH UP TIMELINE AUDIO), TOLERANSI DIKETATKAN BILA LEBIH DARI 5 DETIK
+            if (data.type !== "relay_stream" && data.elapsed_seconds && Math.abs(audio.currentTime - data.elapsed_seconds) > 5) {
+              audio.currentTime = data.elapsed_seconds;
+            }
+          }
+        }
+        
+        setListeners(1);
+        return;
+      }
+
+    } catch (error) {
+      console.error("Gagal sinkronisasi data stream radio:", error);
+      setMetadata({ title: "Hubungan Terputus...", artist: "Radio Suara Al Muttaqin", art: "/bg-player.png" });
+      setListeners(0);
+    }
+  }, [stopMp3Playback]);
+
+  useEffect(() => {
+    fetchMetadata();
+    const interval = setInterval(fetchMetadata, 15000); // Polling metadata disetel per 15 detik sekali
+    return () => clearInterval(interval);
+  }, [fetchMetadata]);
+
   const startPlayback = useCallback(async () => {
     try {
       const audio = audioRef.current;
       if (audio && audio.src && audio.src !== "" && audio.src !== window.location.href) {
         audio.volume = 1;
+        
+        // Memastikan Audio Context resume terlebih dahulu agar visualizer tidak beku
+        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+          await audioContextRef.current.resume();
+        }
+
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           await playPromise;
@@ -323,7 +332,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       }
 
       await fetchMetadata();
-    } catch {
+    } catch (err) {
+      console.error("Gagal mematangkan pemutaran audio stream:", err);
       setHasError(true);
       setIsPlaying(false);
     }
@@ -348,6 +358,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const toggleLivePlayback = useCallback(() => {
     if (isYouTubeLive && youtubeToggleRef.current) {
+      // Alihkan perintah play langsung ke fungsi internal pemutar YouTube tersembunyi Anda
       youtubeToggleRef.current();
       return;
     }
@@ -385,6 +396,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsYouTubePlaying(e.detail);
       isYouTubePlayingRef.current = e.detail; 
     };
+    window.dispatchEvent(new CustomEvent("yt-status-change", { detail: isYouTubePlayingRef.current }));
     window.addEventListener("yt-status-change", syncStatusFromEvent);
     return () => window.removeEventListener("yt-status-change", syncStatusFromEvent);
   }, []);
@@ -457,7 +469,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         preload="none"
         onPause={() => {
           if (!isAutoSwitchingRef.current && userStoppedRef.current && audioRef.current?.volume === 0) {
-            // Biarkan state dikendalikan fungsi mute
+            // Cegah interupsi crash di luar kontrol browser jemaah
           }
         }}
         onPlay={() => {
