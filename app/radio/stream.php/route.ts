@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { client } from '@/lib/sanity.client';
+import { client } from '@/sanity/lib/client';
 
 export const dynamic = 'force-dynamic';
 
