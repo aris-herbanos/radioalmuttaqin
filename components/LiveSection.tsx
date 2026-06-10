@@ -27,6 +27,8 @@ export default function LiveSection() {
     youtubeVideoId,
     setYoutubeVideoId,
     youtubeThumbnail,
+    volume,     // 🟢 SEARAH CONTEXT: Mengambil state volume real-time
+    setVolume,  // 🟢 SEARAH CONTEXT: Mengambil fungsi pengubah volume
   } = useAudio();
 
   // state untuk YouTube API
@@ -392,9 +394,36 @@ export default function LiveSection() {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col sm:flex-row gap-4 sm:gap-3 sm:items-center sm:justify-between">
-            <div className="text-center sm:text-left text-emerald-400 text-sm font-bold">
+          <div className="mt-6 flex flex-col sm:flex-row gap-4 sm:gap-3 sm:items-center sm:justify-between border-t border-white/5 pt-6">
+            <div className="text-center sm:text-left text-emerald-400 text-sm font-bold flex items-center justify-center sm:justify-start gap-2">
               👥 {displayListeners} Pendengar
+            </div>
+
+            {/* 🟢 NEW FEATURE UI: CONTROLLER VOLUME SLIDER & MUTING NEON PREMIUM */}
+            <div className="flex items-center justify-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setVolume(volume > 0 ? 0 : 0.8)} // Instant Mute & Unmute Handling
+                className="text-emerald-400 hover:text-cyan-400 transition-colors text-base select-none cursor-pointer"
+                title={volume === 0 ? "Unmute" : "Mute"}
+              >
+                {volume === 0 ? "🔈" : "🔊"}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={volume || 0}
+                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                className="w-24 sm:w-32 h-1 bg-emerald-950 accent-emerald-500 rounded-lg cursor-pointer outline-none transition-all hover:accent-cyan-400"
+                style={{ 
+                  background: `linear-gradient(to right, #10b981 0%, #10b981 ${(volume || 0) * 100}%, #064e3b ${(volume || 0) * 100}%, #064e3b 100%)` 
+                }}
+              />
+              <span className="text-[10px] font-mono text-emerald-400/70 w-6 text-right select-none">
+                {Math.round((volume || 0) * 100)}%
+              </span>
             </div>
 
             <button
