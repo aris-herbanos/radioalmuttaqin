@@ -14,7 +14,7 @@ interface AudioContextType {
   hasError: boolean;
   metadata: { title: string; artist: string; art: string };
   listeners: number;
-  volume: number; // 🟢 VOLUME MANAGEMENT
+  volume: number;
   setVolume: (vol: number) => void;
   togglePlay: () => void;
   toggleLivePlayback: () => void;
@@ -54,8 +54,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const isPlayingRef = useRef(false);
   const isYouTubePlayingRef = useRef(false);
 
-  // VOLUME MANAGEMENT: State volume internal (0 sampai 1)
-  const [volume, _setVolume] = useState(0.8); // Default 80% biar tidak terlalu menghentak
+  // VOLUME MANAGEMENT
+  const [volume, _setVolume] = useState(0.8);
   const volumeRef = useRef(0.8);
 
   const [isCurrentlyAdzan, setIsCurrentlyAdzan] = useState(false);
@@ -89,22 +89,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const JINGLE_FILE = "/audio/jingle.mp3";
 
   // =================================================================
-  // ⚙️ PENGATURAN HOISTING URUTAN FUNGSI (RESOLVED NEXT.JS RUNTIME ERR)
+  // ⚙️ ENGINE CORE: URUTAN HOISTING ANTI INFINITE LOOP 
   // =================================================================
 
-  // 1. Inisialisasi Audio Engine Web Audio API
   const initAudio = useCallback(() => {
     if (isInitialized.current || !audioRef.current) return;
-
     try {
       const WebAudioContext = typeof window !== "undefined" 
         ? (window.AudioContext || (window as any).webkitAudioContext) 
         : null;
 
-      if (!WebAudioContext) {
-        console.warn("Web Audio API tidak didukung di browser ini.");
-        return;
-      }
+      if (!WebAudioContext) return;
       
       const audioCtx = new WebAudioContext();
       audioContextRef.current = audioCtx;
@@ -125,18 +120,15 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // 2. INTERFACE KONTROL VOLUME KUSTOM
   const setVolume = useCallback((vol: number) => {
     const cleanVol = Math.max(0, Math.min(1, vol));
     _setVolume(cleanVol);
     volumeRef.current = cleanVol;
-    
     if (audioRef.current && !isJinglePlayingRef.current) {
       audioRef.current.volume = cleanVol;
     }
   }, []);
 
-  // 3. OPTIMASI MUTE SUARA
   const stopMp3Playback = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -167,7 +159,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // 4. BUFFER RESET ANTI-SENDAT
   const resetMp3PlaybackCompletely = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -194,7 +185,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(false);
   }, []);
 
-  // 5. POLLING SYNC METADATA & ADZAN ENGINE (Untuk dependensi startPlayback)
+  // 🟢 AMAN LUR: Fungsi Media Session dipisah total tanpa mengikat handler trigger internal
+  const staticLockscreenUpdate = useCallback((title: string, artist: string, artUrl: string) => {
+    if (typeof window !== "undefined" && "mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: artist,
+        album: "Radio Suara Al Muttaqin",
+        artwork: [{ src: artUrl, sizes: "512x512", type: "image/png" }]
+      });
+    }
+  }, []);
+
   const fetchMetadata = useCallback(async () => {
     try {
       const data = await fetchCurrentRadioStatusFromBackend(); 
@@ -206,6 +208,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const fallbackTitle = data?.title || "Siaran Sedang Offline";
         const fallbackArtist = data?.artist || "Radio Suara Al Muttaqin";
         setMetadata({ title: fallbackTitle, artist: fallbackArtist, art: "/bg-player.png" });
+        staticLockscreenUpdate(fallbackTitle, fallbackArtist, "/bg-player.png");
         setListeners(0);
         return;
       }
@@ -233,6 +236,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const finalArt = data.thumbnail || "/bg-player.png";
 
         setMetadata({ title: finalTitle, artist: finalArtist, art: finalArt });
+        staticLockscreenUpdate(finalTitle, finalArtist, finalArt);
         setListeners(1);
         return;
       }
@@ -252,6 +256,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         const finalArt = data.thumbnail || "/bg-player.png";
 
         setMetadata({ title: finalTitle, artist: finalArtist, art: finalArt });
+        staticLockscreenUpdate(finalTitle, finalArtist, finalArt);
 
         const audio = audioRef.current;
         if (audio && data.audio_url) {
@@ -292,19 +297,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Gagal sinkronisasi data stream radio:", error);
     }
-  }, [stopMp3Playback, initAudio]);
+  }, [stopMp3Playback, initAudio, staticLockscreenUpdate]);
 
-  // 6. FUNGSI PEMATANG PLAYBACK STREAM
   const startPlayback = useCallback(async () => {
     try {
       const audio = audioRef.current;
       if (audio && audio.src && audio.src !== "" && audio.src !== window.location.href) {
         audio.volume = volumeRef.current;
-        
         if (audioContextRef.current && audioContextRef.current.state === "suspended") {
           await audioContextRef.current.resume();
         }
-
         await audio.play();
         userStoppedRef.current = false;
         setIsPlaying(true);
@@ -321,25 +323,18 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [fetchMetadata]);
 
-  // 7. FUNGSI UTAMA TOGGLE PLAY MP3 STREAM
   const togglePlay = useCallback(async () => {
     if (!audioRef.current) return;
-
-    if (!isInitialized.current) {
-      initAudio();
-    }
-
+    if (!isInitialized.current) initAudio();
     if (isPlaying) {
       stopMp3Playback();
       return;
     }
-
     userStoppedRef.current = false;
     setHasError(false);
     await startPlayback();
   }, [initAudio, isPlaying, stopMp3Playback, startPlayback]);
 
-  // 8. FUNGSI UTAMA JALUR LIVE PLAYBACK MULTI-ENGINE
   const toggleLivePlayback = useCallback(() => {
     if (isYouTubeLive && youtubeToggleRef.current) {
       youtubeToggleRef.current();
@@ -348,36 +343,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     togglePlay();
   }, [isYouTubeLive, togglePlay]);
 
-  // 9. LURUSKAN LOCKSCREEN: Sinkronisasi Media Session API ke HP Android/iOS Jemaah
-  const updateLockscreenControls = useCallback((title: string, artist: string, artUrl: string) => {
-    if (typeof window !== "undefined" && "mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: title,
-        artist: artist,
-        album: "Radio Suara Al Muttaqin",
-        artwork: [
-          { src: artUrl, sizes: "512x512", type: "image/png" }
-        ]
-      });
-
-      navigator.mediaSession.setActionHandler("play", () => {
-        toggleLivePlayback();
-      });
-      navigator.mediaSession.setActionHandler("pause", () => {
-        toggleLivePlayback();
-      });
-      navigator.mediaSession.setActionHandler("stop", () => {
-        stopMp3Playback();
-      });
-    }
-  }, [toggleLivePlayback, stopMp3Playback]);
-
-  // 10. REGISTER HANDLER TOGGLE EKSTERNAL
   const registerYouTubeToggle = useCallback((handler: (() => void) | null) => {
     youtubeToggleRef.current = handler;
   }, []);
 
-  // 11. LOGIKA INTERUPSI JINGLE SECARA STERIL
   const playJingle = useCallback(() => {
     try {
       if (isCurrentlyAdzanRef.current) {
@@ -415,11 +384,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
       const runJinglePlay = async () => {
         try {
-          if (jingleRef.current) {
-            await jingleRef.current.play();
-          }
+          if (jingleRef.current) await jingleRef.current.play();
         } catch (playErr) {
-          console.error("Jingle playback execution blocked:", playErr);
+          console.error("Jingle blocked:", playErr);
           if (audioRef.current && isPlayingRef.current) audioRef.current.volume = volumeRef.current;
           isJinglePlayingRef.current = false;
         }
@@ -435,13 +402,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         isJinglePlayingRef.current = false;
       };
     } catch (err) {
-      console.error("Gagal memputar jingle:", err);
+      console.error("Gagal jingle:", err);
       if (audioRef.current && isPlayingRef.current) audioRef.current.volume = volumeRef.current;
       isJinglePlayingRef.current = false;
     }
   }, [JINGLE_FILE]);
 
-  // 12. FUNGSI UTAMA INTEGRASI IFRAME YOUTUBE AUDIO
   const toggleYouTubeAudio = useCallback(() => {
     const nextState = !isYouTubePlayingRef.current;
     window.dispatchEvent(new CustomEvent("toggle-yt-player"));
@@ -457,9 +423,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       jingleRef.current.crossOrigin = "anonymous";
     }
     
-    if (nextState) {
-      jingleRef.current.load();
-    }
+    if (nextState) jingleRef.current.load();
 
     if (nextState && audioRef.current) {
       audioRef.current.volume = 0;
@@ -472,14 +436,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [JINGLE_FILE]); 
 
-  // =================================================================
-  // 🛰️ EFFECT & EVENT SUBSCRIPTIONS LIFECYCLE
-  // =================================================================
-
-  // Menyelaraskan rilis metadata pertama ke unit lockscreen mediaSession HP jemaah
   useEffect(() => {
-    updateLockscreenControls(metadata.title, metadata.artist, metadata.art);
-  }, [metadata, updateLockscreenControls]);
+    fetchMetadata();
+    const interval = setInterval(fetchMetadata, 15000); 
+    return () => clearInterval(interval);
+  }, [fetchMetadata]);
+
+  // 🟢 ATUR ACTION HANDLER MEDIA SESSION DISINI (Agar tidak bentrok lifecycle)
+  useEffect(() => {
+    if (typeof window !== "undefined" && "mediaSession" in navigator) {
+      navigator.mediaSession.setActionHandler("play", () => { toggleLivePlayback(); });
+      navigator.mediaSession.setActionHandler("pause", () => { toggleLivePlayback(); });
+      navigator.mediaSession.setActionHandler("stop", () => { stopMp3Playback(); });
+    }
+  }, [toggleLivePlayback, stopMp3Playback]);
 
   useEffect(() => {
     const syncStatusFromEvent = (e: any) => {
@@ -492,9 +462,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (isYouTubeLive) {
-      resetMp3PlaybackCompletely();
-    }
+    if (isYouTubeLive) resetMp3PlaybackCompletely();
   }, [isYouTubeLive, resetMp3PlaybackCompletely]);
 
   useEffect(() => {
@@ -502,35 +470,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       clearInterval(jingleIntervalRef.current);
       jingleIntervalRef.current = null;
     }
-
     const checkAndTriggerJingle = () => {
       const isUserListening = isPlayingRef.current || isYouTubePlayingRef.current;
       if (isUserListening && !isCurrentlyAdzanRef.current) {
         playJingle();
       }
     };
-
     jingleIntervalRef.current = setInterval(checkAndTriggerJingle, JINGLE_INTERVAL);
-
-    return () => {
-      if (jingleIntervalRef.current) {
-        clearInterval(jingleIntervalRef.current);
-        jingleIntervalRef.current = null;
-      }
-    };
-  }, [playJingle, JINGLE_INTERVAL]);
-
-  useEffect(() => {
     return () => {
       if (jingleIntervalRef.current) clearInterval(jingleIntervalRef.current);
-      if (jingleRef.current) jingleRef.current.pause();
-      if (audioContextRef.current) {
-        try {
-          audioContextRef.current.close();
-        } catch {}
-      }
     };
-  }, []);
+  }, [playJingle, JINGLE_INTERVAL]);
 
   return (
     <AudioContext.Provider
@@ -555,24 +505,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         youtubeThumbnail,
       }}
     >
-      <audio
-        ref={audioRef}
-        crossOrigin="anonymous"
-        preload="none"
-        onPause={() => {
-          if (!isAutoSwitchingRef.current && userStoppedRef.current && audioRef.current?.volume === 0) {
-            // Proteksi sirkuit Vercel Serverless
-          }
-        }}
-        onPlay={() => {
-          if (audioRef.current && audioRef.current.volume > 0) {
-            userStoppedRef.current = false;
-            setIsPlaying(true);
-            setHasError(false);
-          }
-        }}
-        className="hidden"
-      />
       {children}
     </AudioContext.Provider>
   );
