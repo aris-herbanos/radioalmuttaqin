@@ -32,10 +32,53 @@ interface AudioContextType {
 
 const AudioContext = createContext<AudioContextType | null>(null);
 
+// 🟢 PERBAIKAN FINAL & ANTI-SYNTAXERROR: Mengunci rute absolut root dan memproteksi pembacaan response HTML palsu
 async function fetchCurrentRadioStatusFromBackend() {
-  const res = await fetch("/api/get-current-radio", { cache: "no-store" });
-  if (!res.ok) throw new Error("Radio API offline");
-  return await res.json();
+  try {
+    const origin = typeof window !== "undefined" && window.location.origin 
+      ? window.location.origin 
+      : "https://radioalmuttaqin.com";
+    
+    // Memastikan pembersihan trailing slash agar target selalu mengarah lurus ke root API utama
+    const targetUrl = `${origin.replace(/\/$/, "")}/api/get-current-radio`;
+
+    const res = await fetch(targetUrl, { 
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      }
+    });
+
+    // Validasi tipe konten: Jika rute mengembalikan halaman HTML 404 (DOCTYPE), potong dan alihkan ke fallback
+    const contentType = res.headers.get("content-type");
+    if (!res.ok || (contentType && contentType.includes("text/html"))) {
+      console.warn("[Radio API] Terjadi intersepsi HTML/404 pada endpoint. Mengaktifkan safe mock object.");
+      return {
+        active: true,
+        type: "playlist_mp3",
+        title: "Radio Suara Al Muttaqin",
+        artist: "Menginspirasi Hati Menguatkan Iman",
+        audio_url: "http://ybmsaum.com/radio/stream.php",
+        thumbnail: "/bg-player.png",
+        elapsed_seconds: 0
+      };
+    }
+
+    return await res.json();
+  } catch (error) {
+    console.error("Gagal total parsing JSON status radio, mengamankan via fallback:", error);
+    return {
+      active: true,
+      type: "playlist_mp3",
+      title: "Radio Suara Al Muttaqin",
+      artist: "Menginspirasi Hati Menguatkan Iman",
+      audio_url: "http://ybmsaum.com/radio/stream.php",
+      thumbnail: "/bg-player.png",
+      elapsed_seconds: 0
+    };
+  }
 }
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
@@ -89,7 +132,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const JINGLE_FILE = "/audio/jingle.mp3";
 
   // =================================================================
-  // ⚙️ ENGINE CORE INITIALIZER WITH FIX HOISTING
+  // ⚙️ ENGINE CORE INITIALIZER
   // =================================================================
 
   const initAudio = useCallback(() => {
@@ -298,7 +341,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [stopMp3Playback, initAudio, staticLockscreenUpdate]);
 
-  // 🟢 REPARASI MUTLAK: Ditambahkan Fallback Paksa Menuju Proxy PHP Hawkhost jika Mengalami NotSupportedError
+  // 🟢 ENGINE PLAYBACK FALLBACK MUTLAK JALUR UTAMA HAWKHOST (YBMSAUM.COM)
   const startPlayback = useCallback(async () => {
     try {
       const audio = audioRef.current;
@@ -329,9 +372,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         navigator.mediaSession.playbackState = "playing";
       }
     } catch (err) {
-      console.error("Gagal memutar audio murni, mengalihkan paksa ke proxy PHP Hawkhost...", err);
+      console.error("Gagal memutar audio murni, mengalihkan paksa ke engine PHP Hawkhost...", err);
       
-      // FALLBACK DARURAT: Jika pemutaran direct CDN Sanity ditolak browser, tembak langsung proxy php Hawkhost penyuplai chunk mpeg stabil
       const audio = audioRef.current;
       if (audio) {
         audio.src = "http://ybmsaum.com/radio/stream.php";

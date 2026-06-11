@@ -23,7 +23,9 @@ export default function LivePlayer() {
   }, [isLiveActive]);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-emerald-950/90 backdrop-blur-xl text-white z-[9999] pointer-events-auto shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.6)] border-t border-white/10">
+    /* 🟢 FIX UTAMA 1: Menaikkan z-index ke tingkat ekstrem [99999] dan menerapkan pointer-events-none 
+       agar boks transparan player tidak menghalangi elemen di belakangnya, tetapi tombol di dalamnya tetap bisa diklik */
+    <div className="fixed bottom-0 left-0 right-0 bg-emerald-950/90 backdrop-blur-xl text-white z-[99999] pointer-events-none shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.6)] border-t border-white/10">
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-6 py-5 flex justify-between items-center relative">
@@ -39,7 +41,6 @@ export default function LivePlayer() {
               Live Streaming
             </h4>
             <p className="text-[13px] font-bold text-white uppercase tracking-tighter leading-none">
-              {/* 🟢 SINKRONISASI LABEL UTAMA: Menyeragamkan identitas nama stasiun radio saat live streaming */}
               {isYouTubeLive ? "RADIO SUARA AL MUTTAQIN" : "Radio Suara Al Muttaqin"}
             </p>
           </div>
@@ -52,8 +53,10 @@ export default function LivePlayer() {
             e.stopPropagation();
             toggleLivePlayback();
           }}
+          /* 🟢 FIX UTAMA 2: Menyuntikkan pointer-events-auto secara eksplisit untuk menjamin tombol 
+             wajib menangkap interaksi klik/sentuhan jemaah di atas lapisan artikel blog detail mana pun */
           className={`
-            relative z-[10000] flex items-center gap-4 px-10 py-3.5
+            relative z-[100000] flex items-center gap-4 px-10 py-3.5 pointer-events-auto
             rounded-full font-black text-[12px] uppercase tracking-widest
             transition-all duration-300 active:scale-95 cursor-pointer select-none
             ${
