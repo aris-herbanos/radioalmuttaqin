@@ -5,7 +5,7 @@ import Script from "next/script";
 export default function Ads() {
   return (
     <div className="my-10 p-4 bg-slate-50 border-y border-slate-100 flex justify-center overflow-hidden rounded-[4px]">
-      {/* Script eksternal AmalSholeh */}
+      {/* Script eksternal AmalSholeh.com */}
       <Script 
         src="https://donasi.amalsholeh.com/widget/script.js" 
         strategy="afterInteractive" 
