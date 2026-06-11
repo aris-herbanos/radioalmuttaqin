@@ -27,8 +27,8 @@ export default function LiveSection() {
     youtubeVideoId,
     setYoutubeVideoId,
     youtubeThumbnail,
-    volume,     // 🟢 SEARAH CONTEXT: Mengambil state volume real-time
-    setVolume,  // 🟢 SEARAH CONTEXT: Mengambil fungsi pengubah volume
+    volume,     // State volume real-time dari context
+    setVolume,  // Fungsi pengubah volume dari context
   } = useAudio();
 
   // state untuk YouTube API
@@ -173,13 +173,13 @@ export default function LiveSection() {
     return () => registerYouTubeToggle(null);
   }, [registerYouTubeToggle, toggleYouTube]);
 
-  // 🟢 SYNC JALUR TERBARU: Menyelaraskan konsumsi objek JSON fresh hasil olahan Sanity
+  // SINKRONISASI JALUR MUTLAK STREAM PHP RADIO AL MUTTAQIN
   const checkLiveStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/get-current-radio", { cache: "no-store" });
       const data = await res.json();
 
-      // Langsung membaca "youtube_video_id" murni dari API penyiaran baru kita
+      // Membaca target video ID untuk skenario darurat YouTube live stream
       const nextVideoId = data.type === "youtube_live" && data.youtube_video_id ? data.youtube_video_id : null;
 
       if (nextVideoId) {
@@ -196,7 +196,7 @@ export default function LiveSection() {
       setIsYouTubeLive(false);
       stopYouTube();
     } catch (err) {
-      console.error("Gagal cek live status:", err);
+      console.error("Gagal sinkronisasi live status stream:", err);
       setYoutubeVideoId(null);
       setIsYouTubeLive(false);
       stopYouTube();
@@ -218,8 +218,10 @@ export default function LiveSection() {
     if (!ctx) return;
 
     const resize = () => {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
+      if (canvas.offsetWidth && canvas.offsetHeight) {
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+      }
     };
 
     resize();
@@ -383,28 +385,27 @@ export default function LiveSection() {
 
               <div className="mt-4 text-center md:text-left">
                 <h3 className="text-lg sm:text-xl lg:text-2xl font-black text-white leading-tight">
-                  {/* ✅ PERBAIKAN CADANGAN: Mengganti teks fallback kosong dari "Radio Suara" ke "RSM On Air" */}
                   {metadata?.title || "RSM On Air"}
                 </h3>
                 <p className="mt-2 text-xs sm:text-sm text-emerald-400 uppercase tracking-wider">
-                  {/* ✅ PERBAIKAN UTAMA: Mengganti tulisan "YouTube Live Stream" mentah menjadi nama radio penuh */}
                   {isYouTubeLive ? "RADIO SUARA AL MUTTAQIN" : metadata?.artist || "Virtual Live Stream"}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col sm:flex-row gap-4 sm:gap-3 sm:items-center sm:justify-between border-t border-white/5 pt-6">
-            <div className="text-center sm:text-left text-emerald-400 text-sm font-bold flex items-center justify-center sm:justify-start gap-2">
+          {/* SINKRONISASI INTERAKSI MOBILITAS TINGGI (relative z-20) */}
+          <div className="mt-6 flex flex-col sm:flex-row gap-4 sm:gap-3 sm:items-center sm:justify-between border-t border-white/5 pt-6 relative z-20">
+            <div className="text-center sm:text-left text-emerald-400 text-sm font-bold flex items-center justify-center sm:justify-start gap-2 select-none">
               👥 {displayListeners} Pendengar
             </div>
 
-            {/* 🟢 NEW FEATURE UI: CONTROLLER VOLUME SLIDER & MUTING NEON PREMIUM */}
-            <div className="flex items-center justify-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/5 shrink-0">
+            {/* AREA CONTROLLER VOLUME (Neon Premium Slider - Terkunci ke Pipa radioalmuttaqin.com) */}
+            <div className="flex items-center justify-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/5 shrink-0 relative z-30 touch-pan-x">
               <button
                 type="button"
-                onClick={() => setVolume(volume > 0 ? 0 : 0.8)} // Instant Mute & Unmute Handling
-                className="text-emerald-400 hover:text-cyan-400 transition-colors text-base select-none cursor-pointer"
+                onClick={() => setVolume(volume > 0 ? 0 : 0.8)} 
+                className="text-emerald-400 hover:text-cyan-400 transition-colors text-base select-none cursor-pointer p-1 active:scale-90 outline-none focus:outline-none"
                 title={volume === 0 ? "Unmute" : "Mute"}
               >
                 {volume === 0 ? "🔈" : "🔊"}
@@ -416,7 +417,7 @@ export default function LiveSection() {
                 step="0.05"
                 value={volume || 0}
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-24 sm:w-32 h-1 bg-emerald-950 accent-emerald-500 rounded-lg cursor-pointer outline-none transition-all hover:accent-cyan-400"
+                className="w-24 sm:w-32 h-1 bg-emerald-950 accent-emerald-500 rounded-lg cursor-pointer outline-none transition-all hover:accent-cyan-400 block"
                 style={{ 
                   background: `linear-gradient(to right, #10b981 0%, #10b981 ${(volume || 0) * 100}%, #064e3b ${(volume || 0) * 100}%, #064e3b 100%)` 
                 }}
@@ -426,13 +427,14 @@ export default function LiveSection() {
               </span>
             </div>
 
+            {/* TOMBOL PLAY PENYIARAN (Mengunci Kendali Passthrough Utama Al Muttaqin) */}
             <button
               type="button"
               onClick={handleTogglePlay}
-              className={`w-full sm:w-auto px-6 sm:px-8 lg:px-12 py-3 lg:py-4 rounded-xl font-black uppercase tracking-wide transition-all active:scale-95 ${
+              className={`w-full sm:w-auto px-6 sm:px-8 lg:px-12 py-3 lg:py-4 rounded-xl font-black uppercase tracking-wide transition-all active:scale-95 cursor-pointer relative z-30 outline-none focus:outline-none shadow-lg ${
                 isPlaying || isYouTubePlaying
-                  ? "bg-red-600 hover:bg-red-500 text-white"
-                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  ? "bg-red-600 hover:bg-red-500 text-white shadow-red-950/20"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/20"
               }`}
             >
               {isPlaying || isYouTubePlaying ? "Stop Radio" : "Putar Radio"}

@@ -39,7 +39,8 @@ export default function LivePlayer() {
               Live Streaming
             </h4>
             <p className="text-[13px] font-bold text-white uppercase tracking-tighter leading-none">
-              {isYouTubeLive ? "YouTube Live Streaming" : "Radio Suara Al Muttaqin"}
+              {/* 🟢 SINKRONISASI LABEL UTAMA: Menyeragamkan identitas nama stasiun radio saat live streaming */}
+              {isYouTubeLive ? "RADIO SUARA AL MUTTAQIN" : "Radio Suara Al Muttaqin"}
             </p>
           </div>
         </div>
