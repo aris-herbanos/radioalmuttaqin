@@ -26,7 +26,7 @@ export default {
       title: 'Nama Stasiun Radio',
       type: 'string',
       fieldset: 'stationMetadata',
-      initialValue: 'Radio Suara Berkemajuan',
+      initialValue: 'Radio Suara Al Muttaqin',
       validation: (rule: Rule) => rule.required().min(3).max(50),
     },
     {
@@ -34,7 +34,7 @@ export default {
       title: 'Slogan / Tagline Radio',
       type: 'string',
       fieldset: 'stationMetadata',
-      initialValue: 'Muhammadiyah Islamic Broadcast',
+      initialValue: 'Al Muttaqin Islamic Broadcast',
       validation: (rule: Rule) => rule.required(),
     },
     {
@@ -94,7 +94,7 @@ export default {
               title: 'Narasumber / Murattal Oleh',
               type: 'string',
               description: 'Contoh: Ustadz Dr. KH. Ahmad, S.Ag atau Nama Qori',
-              initialValue: 'PCM Kembaran',
+              initialValue: 'Al Mutaqin Jepara',
             },
             {
               name: 'startTime',
@@ -208,7 +208,7 @@ export default {
                       const { title, artist } = selection
                       return {
                         title: title || 'Track Tanpa Judul',
-                        subtitle: artist ? `👤 ${artist}` : '👤 PCM Kembaran',
+                        subtitle: artist ? `👤 ${artist}` : '👤 Radio Al Muttaqin',
                       }
                     },
                   },
@@ -248,7 +248,7 @@ export default {
 
               return {
                 title: title || 'Acara Tanpa Nama',
-                subtitle: `📅 [${activeDay}] 🕒 ${start || '00:00'} - ${end || '00:00'} | ${modeLabel} — Oleh: ${speakerName || 'PCM Kembaran'}`,
+                subtitle: `📅 [${activeDay}] 🕒 ${start || '00:00'} - ${end || '00:00'} | ${modeLabel} — Oleh: ${speakerName || 'Radio Al Muttaqin'}`,
               }
             },
           },
