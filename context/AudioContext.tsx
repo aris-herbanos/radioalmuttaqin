@@ -32,201 +32,33 @@ interface AudioContextType {
 
 const AudioContext = createContext<AudioContextType | null>(null);
 
-// 🟢 PERBAIKAN RADIKAL 1: PEMINDAHAN LOGIKA LOGISTIK MURNI KE SISI EDGE CDN & CLIENT (ANTI-BONCOS CPU VERCEL)
-async function fetchCurrentRadioStatusFromSanityDirect() {
+// 🟢 PERBAIKAN SAKRAL 1: AMANKAN ENDPOINT KE API TERPUSAT YANG DILINDUNGI BENTENG EDGE CACHE
+// Mengembalikan fungsi pembacaan data ke server terpusat agar suara 1.000 jemaah dijamin sinkron se-dunia.
+async function fetchCurrentRadioStatusFromBackend() {
   try {
-    const projectId = "n2b8zv2u"; // Project ID Sanity terkonfigurasi
-    const dataset = "production";
-    const jeparaAddress = "Jepara,Central+Java,Indonesia";
-    const adzanDurationSeconds = 300;
-
-    const now = new Date();
+    const origin = typeof window !== "undefined" && window.location.origin 
+      ? window.location.origin 
+      : "https://radioalmuttaqin.com";
     
-    // 1. Ekstraksi Waktu lokal Asia/Jakarta presisi di browser jemaah
-    const timeFormatter = new Intl.DateTimeFormat('id-ID', {
-      timeZone: 'Asia/Jakarta',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
+    const targetUrl = `${origin.replace(/\/$/, "")}/api/get-current-radio`;
+
+    // Fetch dikunci menggunakan sistem verifikasi tipe JSON murni
+    const res = await fetch(targetUrl, { 
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      }
     });
 
-    const timeParts = timeFormatter.formatToParts(now);
-    const currentHours = Number(timeParts.find(p => p.type === 'hour')?.value || 0);
-    const currentMinutes = Number(timeParts.find(p => p.type === 'minute')?.value || 0);
-    const currentSecs = Number(timeParts.find(p => p.type === 'second')?.value || 0);
-    const currentTotalMinutes = currentHours * 60 + currentMinutes;
-
-    // Helper konversi waktu jam string "HH:MM" ke angka menit murni
-    const stringTimeToMinutes = (timeStr: string): number => {
-      if (!timeStr) return 0;
-      const [h, m] = timeStr.replace('.', ':').split(':').map(Number);
-      return (h || 0) * 60 + (m || 0);
-    };
-
-    // =========================================================================
-    // 📿 PROTEKSI LEVEL 0: KALKULASI INTERUPSI ADZAN JEPARA DI BROWSER CLIENT ($0 Vercel CPU)
-    // =========================================================================
-    try {
-      const formattedDateForAPI = new Intl.DateTimeFormat('id-ID', {
-        timeZone: 'Asia/Jakarta',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      }).format(now).replace(/\//g, '-');
-
-      // Panggil API Jadwal Sholat langsung dari browser client secara paralel
-      const prayerRes = await fetch(
-        `https://api.aladhan.com/v1/timingsByAddress/${formattedDateForAPI}?address=${jeparaAddress}&method=KEMENAG&tune=0,0,0,0,0,0,0,0,0`
-      );
-
-      if (prayerRes.ok) {
-        const prayerData = await prayerRes.json();
-        const timings = prayerData?.data?.timings;
-
-        if (timings) {
-          const jadwalSholatWajib = [
-            { nama: "Adzan Subuh", waktu: timings.Fajr },
-            { nama: "Adzan Dzuhur", waktu: timings.Dhuhr },
-            { nama: "Adzan Ashar", waktu: timings.Asr },
-            { nama: "Adzan Maghrib", waktu: timings.Maghrib },
-            { nama: "Adzan Isya", waktu: timings.Isya }
-          ];
-
-          for (const sholat of jadwalSholatWajib) {
-            const adzanStartMinutes = stringTimeToMinutes(sholat.waktu);
-            const adzanEndMinutes = adzanStartMinutes + Math.ceil(adzanDurationSeconds / 60);
-
-            if (currentTotalMinutes >= adzanStartMinutes && currentTotalMinutes < adzanEndMinutes) {
-              const secondsElapsedFromAdzanStart = ((currentTotalMinutes - adzanStartMinutes) * 60) + currentSecs;
-
-              if (secondsElapsedFromAdzanStart < adzanDurationSeconds) {
-                return {
-                  active: true,
-                  type: "playlist_mp3",
-                  youtube_video_id: null,
-                  thumbnail: "/bg-player.png",
-                  title: `${sholat.nama} - Wilayah Jepara & Sekitarnya`,
-                  artist: "Pondok Pesantren Al Muttaqin Jepara",
-                  audio_url: "/audio/adzan.mp3",
-                  elapsed_seconds: secondsElapsedFromAdzanStart
-                };
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Gagal fetch API Aladhan di client side, lanjut filter jadwal CMS:", e);
+    const contentType = res.headers.get("content-type");
+    if (!res.ok || (contentType && contentType.includes("text/html"))) {
+      throw new Error("Endpoint mengembalikan HTML/404 palsu");
     }
 
-    // =========================================================================
-    // 📅 PROTEKSI LEVEL 1: DIRECT FETCH JADWAL SANITY VIA GLOBAL EDGE CDN
-    // =========================================================================
-    const currentDayName = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Jakarta',
-      weekday: 'long'
-    }).format(now).trim().toLowerCase();
-
-    const groqQuery = `*[_type == "radioConfig"][0] {
-      radioName,
-      stationTagline,
-      schedules[] {
-        day, eventName, speaker, startTime, endTime, broadcastMode, youtubeVideoId, relayAudioUrl,
-        playlist[] { trackTitle, speaker, audioUrl }
-      }
-    }`;
-
-    // Menembak url sub-domain .apicdn. agar respons diamankan oleh caching global Sanity
-    const sanityCdnUrl = `https://${projectId}.apicdn.sanity.io/v2021-10-21/data/query/${dataset}?query=${encodeURIComponent(groqQuery)}`;
-    const res = await fetch(sanityCdnUrl, { next: { revalidate: 15 } });
-    if (!res.ok) throw new Error("Sanity offline");
-
-    const json = await res.json();
-    const config = json.result;
-
-    if (config && config.schedules && Array.isArray(config.schedules)) {
-      let activeSchedule = null;
-
-      for (const schedule of config.schedules) {
-        const start = stringTimeToMinutes(schedule.startTime);
-        const end = stringTimeToMinutes(schedule.endTime);
-        const isTimeMatch = currentTotalMinutes >= start && currentTotalMinutes < end;
-        
-        const sDay = (schedule.day || '').trim().toLowerCase();
-        const isDayMatch = sDay === 'everyday' || sDay === currentDayName;
-
-        if (isTimeMatch && isDayMatch) {
-          activeSchedule = schedule;
-          break;
-        }
-      }
-
-      if (activeSchedule) {
-        const stationName = config.radioName || "Radio Suara Al Muttaqin";
-        const startMinutes = stringTimeToMinutes(activeSchedule.startTime);
-        const secondsSinceScheduleStarted = ((currentTotalMinutes - startMinutes) * 60) + currentSecs;
-        const ASSUMED_TRACK_DURATION = 3600;
-
-        if (activeSchedule.broadcastMode === 'youtube_live') {
-          const videoId = activeSchedule.youtubeVideoId?.trim() || null;
-          return {
-            active: true,
-            type: "youtube_live",
-            youtube_video_id: videoId,
-            thumbnail: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : "/bg-player.png",
-            title: activeSchedule.eventName || "Live Streaming YouTube",
-            artist: activeSchedule.speaker || "Pondok Pesantren Al Muttaqin",
-            audio_url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : null,
-            elapsed_seconds: 0
-          };
-        }
-
-        if (activeSchedule.broadcastMode === 'relay_stream') {
-          return {
-            active: true,
-            type: "relay_stream",
-            youtube_video_id: null,
-            thumbnail: "/bg-player.png",
-            title: activeSchedule.eventName || "Relay Stasiun Luar",
-            artist: activeSchedule.speaker || "Radio Mitra",
-            audio_url: activeSchedule.relayAudioUrl?.trim() || "http://ybmsaum.com/radio/stream.php",
-            elapsed_seconds: 0
-          };
-        }
-
-        if (activeSchedule.broadcastMode === 'playlist_mp3' && activeSchedule.playlist && activeSchedule.playlist.length > 0) {
-          const totalPlaylistTracks = activeSchedule.playlist.length;
-          const currentTrackIndex = Math.floor(secondsSinceScheduleStarted / ASSUMED_TRACK_DURATION) % totalPlaylistTracks;
-          const selectedTrack = activeSchedule.playlist[currentTrackIndex];
-
-          return {
-            active: true,
-            type: "playlist_mp3",
-            youtube_video_id: null,
-            thumbnail: "/bg-player.png",
-            title: selectedTrack?.trackTitle || activeSchedule.eventName,
-            artist: selectedTrack?.speaker || activeSchedule.speaker || "Pondok Pesantren Al Muttaqin",
-            audio_url: selectedTrack?.audioUrl || "http://ybmsaum.com/radio/stream.php",
-            elapsed_seconds: secondsSinceScheduleStarted % ASSUMED_TRACK_DURATION
-          };
-        }
-      }
-    }
-
-    // Fallback Darurat murni jika Sanity kosong/tidak ada jadwal aktif
-    return {
-      active: true,
-      type: "playlist_mp3",
-      title: "Radio Suara Al Muttaqin",
-      artist: "Menginspirasi Hati Menguatkan Iman",
-      audio_url: "http://ybmsaum.com/radio/stream.php",
-      thumbnail: "/bg-player.png",
-      elapsed_seconds: 0
-    };
-
+    return await res.json();
   } catch (error) {
-    console.error("Gagal total parsing client data, mengaktifkan objek aman fallback:", error);
+    console.error("[Radio API Context] Gagal parsing terpusat, mengaktifkan objek safe fallback:", error);
     return {
       active: true,
       type: "playlist_mp3",
@@ -399,8 +231,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMetadata = useCallback(async () => {
     try {
-      // 🟢 PERBAIKAN RADIKAL 2: Alihkan pemanggilan ke fungsi direct fetch Sanity CDN baru kita
-      const data = await fetchCurrentRadioStatusFromSanityDirect(); 
+      // 🟢 PERBAIKAN SAKRAL 2: Panggil rute API internal terlindungi cache 10 detik kita
+      const data = await fetchCurrentRadioStatusFromBackend(); 
       
       if (!data || !data.active) {
         setIsYouTubeLive(false);
@@ -469,6 +301,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               audio.currentTime = data.elapsed_seconds;
             }
 
+            // Jalankan pemutaran otomatis hanya jika audio dinyalakan, sedang adzan, atau sakelar otomatis aktif
             if (isPlayingRef.current || isAdzanTime || isAutoSwitchingRef.current) {
               if (!isInitialized.current) initAudio();
               
@@ -486,6 +319,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                 .catch(err => console.warn("Autoplay block protection triggered:", err));
             }
           } else {
+            // Sinkronisasi detik berjalan secara dinamis jika lompatan di atas 5 detik
             if (data.type !== "relay_stream" && data.elapsed_seconds && Math.abs(audio.currentTime - data.elapsed_seconds) > 5) {
               audio.currentTime = data.elapsed_seconds;
             }
@@ -507,7 +341,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       if (!audio) return;
 
       if (!audio.src || audio.src === "" || audio.src === window.location.href || audio.src.includes("null") || audio.src.includes("undefined")) {
-        const res = await fetchCurrentRadioStatusFromSanityDirect();
+        const res = await fetchCurrentRadioStatusFromBackend();
         if (res && res.audio_url) {
           audio.src = res.audio_url;
           audio.load();
