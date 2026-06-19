@@ -6,6 +6,21 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
 
+  /* =========================================================================
+      🛡️ BENTENG DEFLEKSI ABSOLUT: DIRECT REDIRECT (ANTI-BONCOS BANDWIDTH VERCEL)
+     ========================================================================= */
+  async redirects() {
+    return [
+      {
+        source: "/radio/stream.php",
+        // 🟢 MENGUSIR REQUEST BINER AUDIO LANGSUNG KE BACKEND HAWKHOST ANTUM, FAL!
+        // Ganti 'https://domain-laravel-hawkhost-antum.com' dengan url domain Laravel asli antum.
+        destination: "https://ybmsaum.com/radio/stream.php",
+        permanent: true, // Mengembalikan status 308 (Permanent Redirect) agar browser & Radio Garden kapok gedor Vercel
+      },
+    ];
+  },
+
   /* =========================
       IMAGE CONFIG (The "Visa")
      ========================= */
@@ -20,7 +35,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "platform-lookaside.fbsbx.com", // ✅ Foto Profil Facebook (Ditambahkan)
+        hostname: "platform-lookaside.fbsbx.com", // ✅ Foto Profil Facebook
         pathname: "/**",
       },
       {
