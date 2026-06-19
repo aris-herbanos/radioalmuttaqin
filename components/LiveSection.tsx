@@ -27,11 +27,10 @@ export default function LiveSection() {
     youtubeVideoId,
     setYoutubeVideoId,
     youtubeThumbnail,
-    volume,     // State volume real-time dari context
-    setVolume,  // Fungsi pengubah volume dari context
+    volume,     
+    setVolume,  
   } = useAudio();
 
-  // state untuk YouTube API
   const [isYouTubeApiReady, setIsYouTubeApiReady] = useState(false);
 
   // STATE PENDENGAR PALSU (dynamic)
@@ -41,14 +40,13 @@ export default function LiveSection() {
       today.getFullYear() * 10000 +
       (today.getMonth() + 1) * 100 +
       today.getDate();
-    return 300 + (seed % 400); // angka default tiap hari 300–699
+    return 300 + (seed % 400); 
   });
 
-  // buat angka terlihat hidup (naik-turun sedikit tiap 45 detik)
   useEffect(() => {
     const interval = setInterval(() => {
       setDisplayListeners((prev) => {
-        const delta = Math.floor(Math.random() * 3) - 1; // -1,0,+1
+        const delta = Math.floor(Math.random() * 3) - 1; 
         return Math.max(250, prev + delta);
       });
     }, 45000);
@@ -56,7 +54,6 @@ export default function LiveSection() {
     return () => clearInterval(interval);
   }, []);
 
-  // REF Player
   const playerRef = useRef<any>(null);
   const iframeContainerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -84,10 +81,11 @@ export default function LiveSection() {
     isYouTubeApiReadyRef.current = isYouTubeApiReady;
   }, [isYouTubeApiReady]);
 
-  // HANDLE TOMBOL PLAY
-  const handleTogglePlay = () => {
+  const handleTogglePlay = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!isPlaying && !isYouTubePlaying) {
-      setDisplayListeners((prev) => prev + 1); // tambah +1 saat klik play
+      setDisplayListeners((prev) => prev + 1); 
     }
     toggleLivePlayback();
   };
@@ -111,7 +109,6 @@ export default function LiveSection() {
 
   const playYouTube = useCallback(() => {
     const currentVideoId = youtubeVideoIdRef.current;
-
     if (!currentVideoId) return;
 
     if (isPlayingRef.current) {
@@ -173,14 +170,12 @@ export default function LiveSection() {
     return () => registerYouTubeToggle(null);
   }, [registerYouTubeToggle, toggleYouTube]);
 
-  // 🟢 PERBAIKAN SAKRAL: BYPASS VERCEL ACTIVE CPU 100% PADA COBALT SINKRONISASI
-  // Melakukan query GROQ langsung ke Sanity Edge CDN gratisan dari sisi browser client.
+  // DIRECT FETCH SANITY EDGE CDN (MENGHINDARI CPU VERCEL BONCOS)
   const checkLiveStatus = useCallback(async () => {
     try {
-      const projectId = "n2b8zv2u"; // Project ID Sanity terkonfigurasi
+      const projectId = "n2b8zv2u"; 
       const dataset = "production";
       
-      // Ambil string jam:menit Asia/Jakarta saat ini di browser jemaah
       const skrg = new Date();
       const jakartaTimeStr = new Intl.DateTimeFormat("id-ID", {
         timeZone: "Asia/Jakarta",
@@ -192,14 +187,12 @@ export default function LiveSection() {
       const groqQuery = `*[_type == "radioSchedule" && startTime <= "${jakartaTimeStr}" && endTime >= "${jakartaTimeStr}"][0]`;
       const sanityCdnUrl = `https://${projectId}.apicdn.sanity.io/v2021-10-21/data/query/${dataset}?query=${encodeURIComponent(groqQuery)}`;
 
-      // Ambil respons yang di-cache di infrastruktur CDN global Sanity
       const res = await fetch(sanityCdnUrl, { next: { revalidate: 15 } });
       if (!res.ok) return;
 
       const json = await res.json();
       const result = json.result ?? null;
 
-      // Membaca target video ID jika terdapat skenario live stream YouTube
       const nextVideoId = result && result.type === "youtube_live" && result.youtubeVideoId ? result.youtubeVideoId.trim() : null;
 
       if (nextVideoId) {
@@ -229,7 +222,7 @@ export default function LiveSection() {
     return () => clearInterval(interval);
   }, [checkLiveStatus]);
 
-  // CANVAS VISUALIZER
+  // CANVAS VISUALIZER WITH SAFE RENDERING CONTROL
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -252,14 +245,19 @@ export default function LiveSection() {
 
     const draw = () => {
       animationId = requestAnimationFrame(draw);
-
       if (!canvas.width || !canvas.height) return;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const isSyntheticYouTubeActive = isYouTubePlaying;
       const isAnyPlaying = isPlaying || isSyntheticYouTubeActive;
-      if (!isAnyPlaying) return;
+      
+      // Jika tidak ada audio yang diputar, gambar latar belakang kosong gelap yang statis
+      if (!isAnyPlaying) {
+        ctx.fillStyle = "#00110d";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
 
       const width = canvas.width;
       const height = canvas.height;
@@ -399,7 +397,9 @@ export default function LiveSection() {
             </div>
 
             <div className="flex-1 w-full">
-              <div className="h-20 sm:h-24 lg:h-28 bg-black rounded-xl overflow-hidden border border-emerald-500/20">
+              {/* 🟢 FIX UTAMA: Menyuntikkan pointer-events-none secara eksplisit pada boks canvas 
+                  agar lapisan visualizer tidak menghalangi klik tetikus/sentuhan pada tombol di sekitarnya! */}
+              <div className="h-20 sm:h-24 lg:h-28 bg-black rounded-xl overflow-hidden border border-emerald-500/20 pointer-events-none">
                 <canvas ref={canvasRef} className="w-full h-full" />
               </div>
 
@@ -414,17 +414,18 @@ export default function LiveSection() {
             </div>
           </div>
 
-          {/* SINKRONISASI INTERAKSI MOBILITAS TINGGI (relative z-20) */}
           <div className="mt-6 flex flex-col sm:flex-row gap-4 sm:gap-3 sm:items-center sm:justify-between border-t border-white/5 pt-6 relative z-20">
             <div className="text-center sm:text-left text-emerald-400 text-sm font-bold flex items-center justify-center sm:justify-start gap-2 select-none">
               👥 {displayListeners} Pendengar
             </div>
 
-            {/* AREA CONTROLLER VOLUME (Neon Premium Slider - Terkunci ke Pipa radioalmuttaqin.com) */}
             <div className="flex items-center justify-center gap-3 bg-black/40 px-4 py-2 rounded-xl border border-white/5 shrink-0 relative z-30 touch-pan-x">
               <button
                 type="button"
-                onClick={() => setVolume(volume > 0 ? 0 : 0.8)} 
+                onClick={(e) => {
+                  e.preventDefault();
+                  setVolume(volume > 0 ? 0 : 0.8);
+                }} 
                 className="text-emerald-400 hover:text-cyan-400 transition-colors text-base select-none cursor-pointer p-1 active:scale-90 outline-none focus:outline-none"
                 title={volume === 0 ? "Unmute" : "Mute"}
               >
@@ -447,7 +448,6 @@ export default function LiveSection() {
               </span>
             </div>
 
-            {/* TOMBOL PLAY PENYIARAN (Mengunci Kendali Passthrough Utama Al Muttaqin) */}
             <button
               type="button"
               onClick={handleTogglePlay}
@@ -462,7 +462,6 @@ export default function LiveSection() {
           </div>
         </div>
 
-        {/* Hidden YouTube Container */}
         <div
           ref={iframeContainerRef}
           style={{ width: 1, height: 1, opacity: 0, overflow: "hidden" }}
