@@ -173,14 +173,34 @@ export default function LiveSection() {
     return () => registerYouTubeToggle(null);
   }, [registerYouTubeToggle, toggleYouTube]);
 
-  // SINKRONISASI JALUR MUTLAK STREAM PHP RADIO AL MUTTAQIN
+  // 🟢 PERBAIKAN SAKRAL: BYPASS VERCEL ACTIVE CPU 100% PADA COBALT SINKRONISASI
+  // Melakukan query GROQ langsung ke Sanity Edge CDN gratisan dari sisi browser client.
   const checkLiveStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/get-current-radio", { cache: "no-store" });
-      const data = await res.json();
+      const projectId = "n2b8zv2u"; // Project ID Sanity terkonfigurasi
+      const dataset = "production";
+      
+      // Ambil string jam:menit Asia/Jakarta saat ini di browser jemaah
+      const skrg = new Date();
+      const jakartaTimeStr = new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(skrg).replace(".", ":");
 
-      // Membaca target video ID untuk skenario darurat YouTube live stream
-      const nextVideoId = data.type === "youtube_live" && data.youtube_video_id ? data.youtube_video_id : null;
+      const groqQuery = `*[_type == "radioSchedule" && startTime <= "${jakartaTimeStr}" && endTime >= "${jakartaTimeStr}"][0]`;
+      const sanityCdnUrl = `https://${projectId}.apicdn.sanity.io/v2021-10-21/data/query/${dataset}?query=${encodeURIComponent(groqQuery)}`;
+
+      // Ambil respons yang di-cache di infrastruktur CDN global Sanity
+      const res = await fetch(sanityCdnUrl, { next: { revalidate: 15 } });
+      if (!res.ok) return;
+
+      const json = await res.json();
+      const result = json.result ?? null;
+
+      // Membaca target video ID jika terdapat skenario live stream YouTube
+      const nextVideoId = result && result.type === "youtube_live" && result.youtubeVideoId ? result.youtubeVideoId.trim() : null;
 
       if (nextVideoId) {
         setYoutubeVideoId(nextVideoId);
@@ -196,7 +216,7 @@ export default function LiveSection() {
       setIsYouTubeLive(false);
       stopYouTube();
     } catch (err) {
-      console.error("Gagal sinkronisasi live status stream:", err);
+      console.error("Gagal direct fetch live status ke Sanity CDN:", err);
       setYoutubeVideoId(null);
       setIsYouTubeLive(false);
       stopYouTube();

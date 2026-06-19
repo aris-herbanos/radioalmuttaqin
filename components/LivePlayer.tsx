@@ -26,13 +26,31 @@ export default function LivePlayer() {
 
   const isLiveActive = isPlaying || isYouTubePlaying;
 
+  // 🟢 PERBAIKAN AMAN: Restorasi status playback dibungkus proteksi catch 
+  // agar tidak crash jika diblokir oleh kebijakan autoplay browser jemaah
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem("isPlaying") || "false");
-    if (saved && !isLiveActive) toggleLivePlayback();
+    try {
+      const saved = JSON.parse(localStorage.getItem("isPlaying") || "false");
+      if (saved && !isLiveActive) {
+        // Eksekusi pemutaran balik secara pasif
+        const playPromise = toggleLivePlayback();
+        if (playPromise instanceof Promise) {
+          playPromise.catch(() => {
+            console.log("Autoplay dicegah oleh browser, menunggu interaksi pengguna.");
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal membaca status restorasi localStorage:", e);
+    }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("isPlaying", JSON.stringify(isLiveActive));
+    try {
+      localStorage.setItem("isPlaying", JSON.stringify(isLiveActive));
+    } catch (e) {
+      console.error("Gagal menyimpan state status ke localStorage:", e);
+    }
   }, [isLiveActive]);
 
   return (
