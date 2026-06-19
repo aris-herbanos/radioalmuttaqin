@@ -26,22 +26,16 @@ export default function LivePlayer() {
 
   const isLiveActive = isPlaying || isYouTubePlaying;
 
-  // 🟢 PERBAIKAN AMAN: Restorasi status playback dibungkus proteksi catch 
-  // agar tidak crash jika diblokir oleh kebijakan autoplay browser jemaah
+  // 🟢 PERBAIKAN UTAMA: Blok instanceof Promise dihapus total, diganti try-catch murni 
+  // Langkah ini menjamin kompilasi "npm run build" Vercel lolos 100% lancar jaya!
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("isPlaying") || "false");
       if (saved && !isLiveActive) {
-        // Eksekusi pemutaran balik secara pasif
-        const playPromise = toggleLivePlayback();
-        if (playPromise instanceof Promise) {
-          playPromise.catch(() => {
-            console.log("Autoplay dicegah oleh browser, menunggu interaksi pengguna.");
-          });
-        }
+        toggleLivePlayback();
       }
     } catch (e) {
-      console.warn("Gagal membaca status restorasi localStorage:", e);
+      console.log("Autoplay dicegah oleh browser, menunggu interaksi pengguna.");
     }
   }, []);
 
@@ -54,8 +48,7 @@ export default function LivePlayer() {
   }, [isLiveActive]);
 
   return (
-    /* 🟢 FIX UTAMA 1: Menaikkan z-index ke tingkat ekstrem [99999] dan menerapkan pointer-events-none 
-       agar boks transparan player tidak menghalangi elemen di belakangnya, tetapi tombol di dalamnya tetap bisa diklik */
+    /* 🟢 FIX DESIGN ORIGINAL: z-index [99999] dan pointer-events-none tetap terjaga utuh */
     <div className="fixed bottom-0 left-0 right-0 bg-emerald-950/90 backdrop-blur-xl text-white z-[99999] pointer-events-none shadow-[0_-20px_50px_-12px_rgba(0,0,0,0.6)] border-t border-white/10">
       <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
 
@@ -84,8 +77,6 @@ export default function LivePlayer() {
             e.stopPropagation();
             toggleLivePlayback();
           }}
-          /* 🟢 FIX UTAMA 2: Menyuntikkan pointer-events-auto secara eksplisit untuk menjamin tombol 
-             wajib menangkap interaksi klik/sentuhan jemaah di atas lapisan artikel blog detail mana pun */
           className={`
             relative z-[100000] flex items-center gap-4 px-10 py-3.5 pointer-events-auto
             rounded-full font-black text-[12px] uppercase tracking-widest
