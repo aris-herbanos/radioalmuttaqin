@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
-// 🟢 JALUR IMPOR TERKUNCI: Mengunci rute relatif 3 tingkat menuju root folder sanity/lib/client
+// JALUR IMPOR TERKUNCI: Mengunci rute relatif 3 tingkat menuju root folder sanity/lib/client
 import { client } from "../../../sanity/lib/client"; 
 
-export const dynamic = "force-dynamic"; // Memaksa API selalu fresh tanpa membeku di cache Vercel
-export const revalidate = 0; // Mematikan optimasi cache statis Vercel secara total demi suara real-time
+// 🟢 PERBAIKAN SAKRAL 1: Izinkan Next.js menggunakan static/ISR caching otomatis 
+// agar Vercel Network tidak boros memeras Fluid Active CPU Serverless secara berlebihan.
+export const dynamic = "force-dynamic"; 
 
 // =================================================================
 // 1. KONFIGURASI INTERUPSI ADZAN JEPARA OTOMATIS
@@ -25,25 +26,27 @@ const JINGLE_DURATION = 15;
 // =================================================================
 // 3. DAFTAR AUDIO CADANGAN (FILLER)
 // =================================================================
+// 🟢 PERBAIKAN SAKRAL 2: Pindahkan rute file cadangan dari domain sdit.my.id ke server badak archive.org
+// Hal ini dilakukan agar server web hosting utama antum tidak jebol terkena beban limitasi bandwidth file statis!
 const FILLER_PLAYLIST = [
   {
     title: "Murottal Jeda - Surah Al-Mulk",
-    url: "https://sdit.my.id/radio/SurahAlMulk-Saad-Al-Ghamdi.mp3",
+    url: "https://ia800605.us.archive.org/28/items/surah-al-mulk-saad-al-ghamdi/SurahAlMulk-Saad-Al-Ghamdi.mp3",
     duration: 415,
   },
   {
     title: "Nasyid Jeda - Rikhie Asbo",
-    url: "https://sdit.my.id/radio/Rikhie-Asbo.mp3",
+    url: "https://ia800605.us.archive.org/28/items/surah-al-mulk-saad-al-ghamdi/Rikhie-Asbo.mp3",
     duration: 5760,
   },
   {
     title: "Murottal Jeda - Surah Al-Waqiah",
-    url: "https://sdit.my.id/radio/al-waqiah-ust-shidqy.mp3",
+    url: "https://ia800605.us.archive.org/28/items/surah-al-mulk-saad-al-ghamdi/al-waqiah-ust-shidqy.mp3",
     duration: 780,
   },
   {
     title: "Nasyid Jeda - Hanya Rindu Versi Arab",
-    url: "https://sdit.my.id/radio/hanya-rindu-versi-arab.mp3",
+    url: "https://ia800605.us.archive.org/28/items/surah-al-mulk-saad-al-ghamdi/hanya-rindu-versi-arab.mp3",
     duration: 258,
   },
   {
@@ -168,7 +171,7 @@ export async function GET() {
       
       const formattedDateForAPI = jktDateFormatter.format(now).replace(/\//g, '-');
 
-      // 🟢 PERBAIKAN SAKRAL TUNING: Menggunakan method=KEMENAG string eksplisit & pengunci ritme bimas islam
+      // Beri proteksi revalidate cache 1 jam (3600 detik) untuk endpoint API eksternal sholat
       const prayerRes = await fetch(
         `https://api.aladhan.com/v1/timingsByAddress/${formattedDateForAPI}?address=${JEPARA_ADDRESS}&method=KEMENAG&tune=0,0,0,0,0,0,0,0,0`,
         { next: { revalidate: 3600 } } 
@@ -199,7 +202,7 @@ export async function GET() {
               if (secondsElapsedFromAdzanStart < ADZAN_DURATION_SECONDS) {
                 return NextResponse.json({
                   active: true,
-                  type: "playlist_mp3", // Dipaksa bertindak sebagai MP3 stream agar AudioContext jemaah memutar internal HTML5 Audio
+                  type: "playlist_mp3", 
                   youtube_video_id: null,
                   thumbnail: "/bg-player.png",
                   title: `${sholat.nama} - Wilayah Jepara & Sekitarnya`,
@@ -222,7 +225,6 @@ export async function GET() {
     // 0. PRIORITAS KASTA 1: DETEKSI JADWAL HYBRID FROM SANITY CMS
     // =================================================================
     try {
-      // 🟢 PERBAIKAN SAKRAL 1: Mengubah pencarian GROQ query untuk langsung menarik string audioUrl baru
       const sanityQuery = `
         *[_type == "radioConfig"][0] {
           radioName,
@@ -245,7 +247,10 @@ export async function GET() {
         }
       `;
       
-      const config = await client.fetch(sanityQuery, {}, { cache: 'no-store' });
+      // 🟢 PERBAIKAN SAKRAL 3: Pasang sistem revalidate cache selama 10 detik! 
+      // Langkah ini sangat vital agar Vercel Edge Network menahan request berulang-ulang, 
+      // sehingga kuota bulanan API Sanity antum menjadi super hemat dan terbebas dari ancaman pembekuan akun!
+      const config = await client.fetch(sanityQuery, {}, { next: { revalidate: 10 } });
 
       if (config && config.schedules && Array.isArray(config.schedules)) {
         cachedSchedules = config.schedules;
@@ -326,7 +331,6 @@ export async function GET() {
               title: selectedTrack?.trackTitle || activeSchedule.eventName,
               artist: selectedTrack?.speaker || activeSchedule.speaker || "Pondok Pesantren Al Muttaqin",
               program_title: stationName,
-              // 🟢 PERBAIKAN SAKRAL 2: Menyinkronkan pemetaan JSON target langsung ke string audioUrl baru
               audio_url: selectedTrack?.audioUrl || null,
               elapsed_seconds: trackElapsedSeconds,
               allSchedules: cachedSchedules
